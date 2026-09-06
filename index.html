@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>БСИ — короткие спецификации теплообменников</title>
-<link rel="stylesheet" href="css/style.css" />
+<link rel="stylesheet" href="css/style.css?v=22" />
 
 <!-- Библиотеки — собраны локально в vendor/, CDN не требуется для загрузки самого приложения.
      Исключение: Tesseract.js при OCR-распознавании сам подтягивает языковые данные
@@ -36,7 +36,7 @@
 
     <div id="customTplBlock" style="display:none;">
       <input type="file" id="customTplInput" accept=".pdf" />
-      <div class="hint">Загрузите PDF бланка для другой модели (тот же фирменный бланк БСИ, просто другая картинка/марка) — координаты полей общие для всей линейки, разметка не нужна. Перед тем как формировать документ с реальными данными, нажмите «Проверить совмещение».</div>
+      <div class="hint">Загрузите PDF бланка для другой модели (тот же фирменный бланк БСИ, просто другая картинка/марка теплообменника) — сами данные пойдут в готовый Word-шаблон (координаты не нужны), а картинку теплообменника программа вырежет из этого PDF автоматически. Если картинка на превью съехала — поправьте сдвиг и нажмите «Обновить превью».</div>
       <div class="status-line" id="customTplStatus"></div>
       <div id="customTplActions" style="display:none; margin-top:10px;">
         <div class="offset-row">
@@ -44,8 +44,10 @@
           <label>Сдвиг по Y, мм <input type="number" id="offsetYInput" value="0" step="0.5" /></label>
         </div>
         <div class="actions-row">
-          <button id="btnCheckAlignment" class="secondary">Проверить совмещение (тестовый PDF)</button>
+          <button id="btnCheckAlignment" class="secondary">Обновить превью картинки</button>
         </div>
+        <div class="status-line" id="diagramPreviewStatus"></div>
+        <img id="diagramPreviewImg" style="display:none; max-width:100%; border:1px solid var(--border); border-radius:6px; margin-top:8px;" />
       </div>
     </div>
   </section>
@@ -78,10 +80,10 @@
     <h2><span class="step-num">4</span>Сформировать документ</h2>
     <div class="actions-row" id="builtinActions">
       <button id="btnVsdx">Скачать .vsdx</button>
-      <button id="btnPdf" class="secondary">Скачать PDF</button>
+      <button id="btnDocx" class="secondary">Скачать Word (.docx)</button>
     </div>
     <div class="actions-row" id="customActions" style="display:none;">
-      <button id="btnCustomPdf">Скачать PDF (по своему бланку)</button>
+      <button id="btnCustomDocx">Скачать Word (.docx) (по своему бланку)</button>
     </div>
     <div class="status-line" id="genStatus"></div>
     <div class="hint" style="margin-top:8px; color:#6b7280; font-size:12px;">
@@ -94,15 +96,20 @@
 
 <script src="vendor/fontkit.umd.min.js"></script>
 <script src="vendor/pdf-lib.min.js"></script>
-<script src="js/config.js?v=19"></script>
-<script src="js/units.js?v=19"></script>
-<script src="js/fieldMap.js?v=19"></script>
-<script src="js/beltoParser.js?v=19"></script>
-<script src="js/extract.js?v=19"></script>
-<script src="js/vsdxBuilder.js?v=19"></script>
-<script src="js/pdfTemplate.js?v=19"></script>
-<script src="js/builtinPdfMapping.js?v=19"></script>
-<script src="js/sheetsLog.js?v=19"></script>
-<script src="js/app.js?v=19"></script>
+<script src="vendor/pizzip.min.js"></script>
+<script src="vendor/docxtemplater.min.js"></script>
+<script src="vendor/docxtemplater-image-module-free.js"></script>
+<script src="js/config.js?v=22"></script>
+<script src="js/units.js?v=22"></script>
+<script src="js/fieldMap.js?v=22"></script>
+<script src="js/beltoParser.js?v=22"></script>
+<script src="js/extract.js?v=22"></script>
+<script src="js/vsdxBuilder.js?v=22"></script>
+<script src="js/pdfTemplate.js?v=22"></script>
+<script src="js/builtinPdfMapping.js?v=22"></script>
+<script src="js/docxTemplate.js?v=22"></script>
+<script src="js/diagramCrop.js?v=22"></script>
+<script src="js/sheetsLog.js?v=22"></script>
+<script src="js/app.js?v=22"></script>
 </body>
 </html>

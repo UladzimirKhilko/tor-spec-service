@@ -122,7 +122,7 @@ function initCustomTemplateUpload() {
   });
   el('offsetXInput').addEventListener('input', readOffsetInputs);
   el('offsetYInput').addEventListener('input', readOffsetInputs);
-  el('btnCheckAlignment').addEventListener('click', handleCheckAlignment);
+  el('btnCheckAlignment').addEventListener('click', handleUpdateDiagramPreview);
 }
 
 function readOffsetInputs() {
@@ -158,44 +158,44 @@ async function handleCustomTplUpload(file) {
     setStatus(
       'customTplStatus',
       existing
-        ? `Бланк «${file.name}» уже проверялся в этом браузере (сдвиг ${existing.offsetXFrac ? 'сохранён' : 'не потребовался'}) — можно заполнять поля и генерировать PDF, либо нажать «Проверить совмещение» ещё раз.`
-        : `Бланк «${file.name}» загружен — координаты полей той же линейки бланков применяются сразу. Нажмите «Проверить совмещение», чтобы убедиться, что всё легло ровно, прежде чем формировать документ с реальными данными.`,
+        ? `Бланк «${file.name}» уже открывали в этом браузере (сдвиг ${(existing.offsetXFrac || existing.offsetYFrac) ? 'сохранён' : 'не потребовался'}) — можно заполнять поля и генерировать Word.`
+        : `Бланк «${file.name}» загружен — можно заполнять поля и генерировать Word. Ниже показано превью вырезанной картинки теплообменника — если она съехала, поправьте сдвиг.`,
       'ok'
     );
+    await handleUpdateDiagramPreview();
   } catch (err) {
     console.error(err);
     setStatus('customTplStatus', 'Не удалось прочитать PDF: ' + err.message, 'err');
   }
 }
 
-// Тестовые значения — имя каждого ключа поля вместо реальных данных, чтобы
-// на контрольном PDF сразу было видно, какое поле куда легло. Для
-// многострочного блока сертификатов — образцовый текст (проверяет заодно и
-// перенос строк).
-function buildAlignmentTestValues() {
-  const values = {};
-  BUILTIN_PDF_FIELD_KEYS.forEach((key) => {
-    values[key] = key === 'certificates_note' ? DEFAULT_CERTIFICATES_TEXT : key;
-  });
-  return values;
-}
-
-async function handleCheckAlignment() {
+// Показывает вырезанную из загруженного PDF картинку теплообменника прямо в
+// форме (вместо старого способа — скачивать отдельный "тестовый PDF" и
+// сверять руками) — это и есть самопроверка перед генерацией настоящего
+// документа: если картинка на превью съехала (обрезаны патрубки/подписи),
+// сотрудник сам поправит "сдвиг по X/Y" и нажмёт "Обновить превью" ещё раз.
+async function handleUpdateDiagramPreview() {
   if (!customTplBytes) {
-    setStatus('customTplStatus', 'Сначала загрузите бланк.', 'err');
+    setStatus('diagramPreviewStatus', 'Сначала загрузите бланк.', 'err');
     return;
   }
   readOffsetInputs();
-  setStatus('customTplStatus', 'Формирую тестовый PDF для проверки совмещения...');
+  setStatus('diagramPreviewStatus', 'Вырезаю картинку из PDF...');
   try {
-    const mapping = buildLetterheadMapping(customTplOffsetXFrac, customTplOffsetYFrac);
-    const { bytes } = await fillPdfTemplate(customTplBytes, BUILTIN_PDF_FIELD_KEYS, mapping, buildAlignmentTestValues());
-    const filename = `проверка-${(customTplFileName || 'blank').replace(/\.(pdf)$/i, '')}.pdf`;
-    downloadPdfBytes(bytes, filename);
-    setStatus('customTplStatus', `Скачан ${filename} — откройте и сверьте с образцом. Если какое-то поле съехало, подправьте «сдвиг по X/Y» (в мм) и проверьте ещё раз.`, 'ok');
+    const crop = await cropDiagramFromPdf(customTplBytes, customTplOffsetXFrac, customTplOffsetYFrac);
+    const key = `custom:${customTplHash}:${customTplOffsetXFrac}:${customTplOffsetYFrac}`;
+    cachedDiagramCrop = { key, crop };
+    const blob = new Blob([crop.bytes], { type: 'image/png' });
+    const url = URL.createObjectURL(blob);
+    const img = el('diagramPreviewImg');
+    if (img.dataset.prevUrl) URL.revokeObjectURL(img.dataset.prevUrl);
+    img.src = url;
+    img.dataset.prevUrl = url;
+    img.style.display = '';
+    setStatus('diagramPreviewStatus', 'Готово — сверьте с образцом. Если патрубки/подписи обрезаны, поправьте сдвиг и нажмите ещё раз.', 'ok');
   } catch (err) {
     console.error(err);
-    setStatus('customTplStatus', 'Ошибка формирования тестового PDF: ' + err.message, 'err');
+    setStatus('diagramPreviewStatus', 'Ошибка вырезки картинки: ' + err.message, 'err');
   }
 }
 
@@ -400,54 +400,69 @@ function buildLetterheadValues() {
   };
 }
 
-async function handleGeneratePdf() {
+// Кэш вырезанной картинки теплообменника — по ключу (файл бланка + сдвиг),
+// чтобы не перевырезать её из PDF при каждом клике "Скачать", если ничего
+// не поменялось с прошлого раза.
+let cachedDiagramCrop = null; // { key, crop }
+
+async function getDiagramCropForBuiltin() {
+  const pdfFile = (currentTemplate && currentTemplate.pdfFile) || BUILTIN_LETTERHEAD_TEMPLATES[0].file;
+  const key = `builtin:${pdfFile}`;
+  if (cachedDiagramCrop && cachedDiagramCrop.key === key) return cachedDiagramCrop.crop;
+  const pdfBytes = await getLetterheadTemplateBytes(pdfFile);
+  const crop = await cropDiagramFromPdf(pdfBytes, 0, 0);
+  cachedDiagramCrop = { key, crop };
+  return crop;
+}
+
+async function handleGenerateDocx() {
   if (!currentTemplate) return;
-  setStatus('genStatus', 'Формирую PDF...');
+  setStatus('genStatus', 'Формирую Word-документ...');
   try {
-    const pdfFile = currentTemplate.pdfFile || BUILTIN_LETTERHEAD_TEMPLATES[0].file;
-    const pdfBytes = await getLetterheadTemplateBytes(pdfFile);
     const values = buildLetterheadValues();
-    const { bytes, notPlaced } = await fillPdfTemplate(pdfBytes, BUILTIN_PDF_FIELD_KEYS, buildLetterheadMapping(0, 0), values);
-    const filename = buildOutputFilename('pdf');
-    downloadPdfBytes(bytes, filename);
-    if (notPlaced.length) {
-      setStatus('genStatus', `Скачан файл ${filename}, но не удалось разместить: ${notPlaced.join(', ')}.`, 'err');
-    } else {
-      setStatus('genStatus', `Скачан файл ${filename}`, 'ok');
-    }
+    const diagram = await getDiagramCropForBuiltin();
+    const templateBytes = await getDocxTemplateBytes();
+    const bytes = await fillDocxTemplate(templateBytes, values, currentFieldValues['certificates_note'] || '', diagram);
+    const filename = buildOutputFilename('docx');
+    downloadDocxBytes(bytes, filename);
+    setStatus('genStatus', `Скачан файл ${filename}`, 'ok');
   } catch (err) {
     console.error(err);
-    setStatus('genStatus', 'Ошибка формирования PDF: ' + err.message, 'err');
+    setStatus('genStatus', 'Ошибка формирования Word-документа: ' + err.message, 'err');
   }
   // Журнал пишется отдельно и не блокирует скачивание — ошибка логирования
   // не должна мешать пользователю.
-  logToSheet(buildLogEntry('pdf'));
+  logToSheet(buildLogEntry('docx'));
 }
 
-/* ---------------- Генерация PDF по своему бланку (та же разметка, что и у готовых) ---------------- */
+/* ---------------- Генерация Word по своему бланку ---------------- */
 
-async function handleGenerateCustomPdf() {
+async function handleGenerateCustomDocx() {
   if (!customTplBytes) {
     setStatus('genStatus', 'Сначала загрузите свой бланк (шаг 1).', 'err');
     return;
   }
-  setStatus('genStatus', 'Формирую PDF по вашему бланку...');
+  setStatus('genStatus', 'Формирую Word-документ по вашему бланку...');
   try {
     readOffsetInputs();
     const values = buildLetterheadValues();
-    const mapping = buildLetterheadMapping(customTplOffsetXFrac, customTplOffsetYFrac);
-    const { bytes, notPlaced } = await fillPdfTemplate(customTplBytes, BUILTIN_PDF_FIELD_KEYS, mapping, values);
-    const filename = buildOutputFilename('pdf');
-    downloadPdfBytes(bytes, filename);
-    if (notPlaced.length) {
-      setStatus('genStatus', `Скачан файл ${filename}, но не удалось разместить: ${notPlaced.join(', ')}.`, 'err');
+    const key = `custom:${customTplHash}:${customTplOffsetXFrac}:${customTplOffsetYFrac}`;
+    let diagram;
+    if (cachedDiagramCrop && cachedDiagramCrop.key === key) {
+      diagram = cachedDiagramCrop.crop;
     } else {
-      setStatus('genStatus', `Скачан файл ${filename}`, 'ok');
+      diagram = await cropDiagramFromPdf(customTplBytes, customTplOffsetXFrac, customTplOffsetYFrac);
+      cachedDiagramCrop = { key, crop: diagram };
     }
-    await logToSheet(buildLogEntry('pdf-custom'));
+    const templateBytes = await getDocxTemplateBytes();
+    const bytes = await fillDocxTemplate(templateBytes, values, currentFieldValues['certificates_note'] || '', diagram);
+    const filename = buildOutputFilename('docx');
+    downloadDocxBytes(bytes, filename);
+    setStatus('genStatus', `Скачан файл ${filename}`, 'ok');
+    await logToSheet(buildLogEntry('docx-custom'));
   } catch (err) {
     console.error(err);
-    setStatus('genStatus', 'Ошибка формирования PDF: ' + err.message, 'err');
+    setStatus('genStatus', 'Ошибка формирования Word-документа: ' + err.message, 'err');
   }
 }
 
@@ -513,6 +528,6 @@ document.addEventListener('DOMContentLoaded', () => {
   initCustomTemplateUpload();
   initDropzone();
   el('btnVsdx').addEventListener('click', handleGenerateVsdx);
-  el('btnPdf').addEventListener('click', handleGeneratePdf);
-  el('btnCustomPdf').addEventListener('click', handleGenerateCustomPdf);
+  el('btnDocx').addEventListener('click', handleGenerateDocx);
+  el('btnCustomDocx').addEventListener('click', handleGenerateCustomDocx);
 });
