@@ -358,10 +358,12 @@ async function handleGenerateVsdx() {
   if (!currentTemplate) return;
   setStatus('genStatus', 'Собираю .vsdx...');
   try {
-    const fills = currentTemplate.fields.map((f) => ({
-      shapeIds: f.shapeIds,
-      value: f.key === 'calc_number' ? formatCalcNumber(currentFieldValues[f.key]) : (currentFieldValues[f.key] || ''),
-    }));
+    const fills = currentTemplate.fields.map((f) => {
+      let value = currentFieldValues[f.key] || '';
+      if (f.key === 'calc_number') value = formatCalcNumber(value);
+      else if (f.key === 'executor') value = formatExecutorCombined(value);
+      return { shapeIds: f.shapeIds, value };
+    });
     const { blob, notFound } = await buildVsdx(currentTemplate.file, fills);
     const filename = buildOutputFilename('vsdx');
     downloadBlob(blob, filename);
@@ -398,12 +400,19 @@ async function handleGeneratePdf() {
   setStatus('genStatus', 'Формирую PDF...');
   try {
     const pdfBytes = await getBuiltinPdfTemplateBytes();
-    const { executor_name, executor_date } = splitExecutorValue(currentFieldValues['executor']);
+    // Напечатанный на бланке значок "№" тоже закрашивается и рисуется заново
+    // вместе с номером одной строкой (см. комментарий у calc_number в
+    // builtinPdfMapping.js) — чтобы всю надпись можно было сдвинуть левее, не
+    // уменьшая шрифт. Если номер не введён — ничего не рисуем и не трогаем
+    // исходный "№ --/---2020" с бланка.
+    const formattedCalcNumber = formatCalcNumber(currentFieldValues['calc_number']);
     const values = {
       ...currentFieldValues,
-      executor_name,
-      executor_date,
-      calc_number: formatCalcNumber(currentFieldValues['calc_number']),
+      executor_name: (currentFieldValues['executor'] || '').trim(),
+      // Дата всегда сегодняшняя на момент формирования документа — не
+      // зависит от того, заполнено ли ФИО.
+      executor_date: formatTodayDateDMY(),
+      calc_number: formattedCalcNumber ? `№ ${formattedCalcNumber}` : '',
     };
     const { bytes, notPlaced } = await fillPdfTemplate(pdfBytes, BUILTIN_PDF_FIELD_KEYS, BUILTIN_PDF_MAPPING, values);
     const filename = buildOutputFilename('pdf');
@@ -436,7 +445,11 @@ async function handleGenerateCustomPdf() {
   setStatus('genStatus', 'Формирую PDF по вашему шаблону...');
   try {
     const fieldKeys = PDF_TEMPLATE_FIELDS.map((f) => f.key);
-    const values = { ...currentFieldValues, calc_number: formatCalcNumber(currentFieldValues['calc_number']) };
+    const values = {
+      ...currentFieldValues,
+      calc_number: formatCalcNumber(currentFieldValues['calc_number']),
+      executor: formatExecutorCombined(currentFieldValues['executor']),
+    };
     const { bytes, notPlaced } = await fillPdfTemplate(customTplBytes, fieldKeys, customTplMapping, values);
     const filename = buildOutputFilename('pdf');
     downloadPdfBytes(bytes, filename);
@@ -464,6 +477,26 @@ function formatCalcNumber(rawNumber) {
   const mm = String(now.getMonth() + 1).padStart(2, '0');
   const yyyy = now.getFullYear();
   return `${num}/${mm}-${yyyy}`;
+}
+
+// Дата в правом нижнем углу документа ("Расчёт выполнил: ФИО ... дата") —
+// всегда текущая на момент формирования документа, вводить вручную не нужно.
+// Формат по просьбе пользователя — дд/мм/гггг (со слэшами).
+function formatTodayDateDMY() {
+  const now = new Date();
+  const dd = String(now.getDate()).padStart(2, '0');
+  const mm = String(now.getMonth() + 1).padStart(2, '0');
+  const yyyy = now.getFullYear();
+  return `${dd}/${mm}/${yyyy}`;
+}
+
+// Для .vsdx и "своего PDF-шаблона" ФИО и дата пишутся в одну и ту же ячейку
+// одной строкой (как раньше, когда дату вводили руками) — просто дата теперь
+// всегда сегодняшняя, а не то, что ввёл пользователь.
+function formatExecutorCombined(rawName) {
+  const name = (rawName || '').trim();
+  const today = formatTodayDateDMY();
+  return name ? `${name}, ${today}` : today;
 }
 
 function buildOutputFilename(ext) {

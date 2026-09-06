@@ -26,10 +26,11 @@
  * настоящее значение, чтобы старый и новый текст не накладывались друг на
  * друга.
  *
- * "executor" в форме — одно поле "ФИО, дата", а в самом бланке это две
- * РАЗНЫЕ области (между ними ещё напечатаны телефон/факс/e-mail) — поэтому
- * при генерации (см. handleGeneratePdf в app.js) строка делится по последней
- * запятой на executor_name/executor_date и пишется в две точки отдельно.
+ * "executor" в форме — это поле ФИО, а в самом бланке подпись и дата — две
+ * РАЗНЫЕ области (между ними ещё напечатаны телефон/факс/e-mail): ФИО пишется
+ * в executor_name как есть, а дата (executor_date) всегда подставляется
+ * текущая на момент формирования документа (см. handleGeneratePdf в app.js) —
+ * пользователю вводить её не нужно.
  */
 
 const BUILTIN_PDF_TEMPLATE_FILE = 'templates/TOR-15M_13-1x-original.pdf';
@@ -83,8 +84,16 @@ const BUILTIN_PDF_MAPPING = {
     price_total: { xFrac: 0.39647, yFrac: 0.49804 },
 
     calc_number: {
-      xFrac: 0.87600, yFrac: 0.03951,
-      redact: { xFrac: 0.87432, yFrac: 0.03743, wFrac: 0.07902, hFrac: 0.01367 },
+      // Между напечатанным "№" и краем листа было слишком мало места для
+      // номера переменной длины — по итогам обсуждения решили не уменьшать
+      // шрифт, а вместо этого закрасить и сам напечатанный значок "№" и
+      // написать всю надпись "№ 19234/09-2026" заново целиком (см.
+      // handleGeneratePdf в app.js, который подставляет сюда готовую строку
+      // с "№ " в начале) — сдвинутую левее, во весь исходный размер шрифта.
+      // Выравнивание по правому краю (rightXFrac) держит одинаковый отступ
+      // от кромки страницы независимо от длины номера.
+      xFrac: 0.83000, yFrac: 0.03951, align: 'right', rightXFrac: 0.97480,
+      redact: { xFrac: 0.82500, yFrac: 0.03600, wFrac: 0.15500, hFrac: 0.01750 },
     },
     // Синтетические поля — см. пояснение выше про разбор "executor".
     executor_name: {
@@ -146,19 +155,4 @@ async function getBuiltinPdfTemplateBytes() {
     cachedBuiltinPdfBytes = await resp.arrayBuffer();
   }
   return cachedBuiltinPdfBytes;
-}
-
-// currentFieldValues['executor'] — одна строка вида "Иванов И.И., 06.09.2026"
-// (ФИО, дата) — делим по ПОСЛЕДНЕЙ запятой: всё после неё — дата, всё до —
-// ФИО. Если запятой нет, дата не пишется (плейсхолдер в бланке остаётся
-// как есть), а вся строка уходит в поле имени.
-function splitExecutorValue(raw) {
-  const value = (raw || '').trim();
-  if (!value) return { executor_name: '', executor_date: '' };
-  const idx = value.lastIndexOf(',');
-  if (idx === -1) return { executor_name: value, executor_date: '' };
-  return {
-    executor_name: value.slice(0, idx).trim(),
-    executor_date: value.slice(idx + 1).trim(),
-  };
 }

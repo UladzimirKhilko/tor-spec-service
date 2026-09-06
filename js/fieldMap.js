@@ -33,7 +33,7 @@ const TEMPLATES = [
       { key: 'calc_number',      label: 'Номер расчёта',                    group: 'manual', shapeIds: [1797], unit: null, notes: 'Введите только номер, например 19234 — месяц и год подставятся автоматически по сегодняшней дате: получится "19234/09-2026"' },
       { key: 'price_unit',       label: 'Цена без НДС за единицу, руб',     group: 'manual', shapeIds: [31], unit: 'руб', notes: '' },
       { key: 'price_total',      label: 'ИТОГО цена без НДС, руб',          group: 'manual', shapeIds: [36, 1794], unit: 'руб', notes: '' },
-      { key: 'executor',         label: 'Расчёт выполнил (ФИО, дата)',      group: 'manual', shapeIds: [56], unit: null, notes: '' },
+      { key: 'executor',         label: 'Расчёт выполнил (ФИО)',            group: 'manual', shapeIds: [56], unit: null, notes: 'Дата проставляется автоматически текущим числом (дд/мм/гггг) — вводить не нужно' },
 
       // --- Автозаполнение из спецификации BelTO (можно поправить руками) ---
       { key: 'model',

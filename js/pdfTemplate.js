@@ -33,7 +33,7 @@ const PDF_TEMPLATE_FIELDS = [
   { key: 'calc_number',      label: 'Номер расчёта',                    group: 'manual', notes: 'Введите только номер, например 19234 — месяц и год подставятся автоматически по сегодняшней дате' },
   { key: 'price_unit',       label: 'Цена без НДС за единицу, руб',     group: 'manual', notes: '' },
   { key: 'price_total',      label: 'ИТОГО цена без НДС, руб',          group: 'manual', notes: '' },
-  { key: 'executor',         label: 'Расчёт выполнил (ФИО, дата)',      group: 'manual', notes: '' },
+  { key: 'executor',         label: 'Расчёт выполнил (ФИО)',            group: 'manual', notes: 'Дата проставляется автоматически текущим числом (дд/мм/гггг) — вводить не нужно' },
 
   { key: 'model',
     label: 'Марка теплообменника',
@@ -265,20 +265,31 @@ async function fillPdfTemplate(pdfBytes, fieldKeys, mapping, values) {
     // xFrac/yFrac — доли ширины/высоты страницы, отсчитанные от левого
     // верхнего угла (так удобнее было кликать на превью) — переводим в
     // систему координат PDF (ось Y снизу вверх).
+    // Часть полей (например номер расчёта) задают свой fontSize меньше
+    // общего FONT_SIZE — там мало места (например между напечатанным "№" и
+    // краем листа).
+    const fontSize = pos.fontSize || FONT_SIZE;
     let x;
     if (pos.align === 'center' && pos.centerXFrac !== undefined) {
       // Центрируем по горизонтали относительно centerXFrac (например —
       // середина узкой ячейки вроде "L, мм"/"A, мм") — ширина текста в
       // конкретном шрифте/размере известна только после embedFont, поэтому
       // подобрать x можно только здесь, а не заранее в разметке.
-      const textWidth = font.widthOfTextAtSize(text, FONT_SIZE);
+      const textWidth = font.widthOfTextAtSize(text, fontSize);
       x = pos.centerXFrac * pageW - textWidth / 2;
+    } else if (pos.align === 'right' && pos.rightXFrac !== undefined) {
+      // Выравниваем по ПРАВОМУ краю относительно rightXFrac (например номер
+      // расчёта — текст переменной длины: короткий номер и с длинным номером
+      // "12345/09-2026" правый край всегда остаётся на одном месте с ровным
+      // отступом от края листа, а не наезжает на границу при длинных числах).
+      const textWidth = font.widthOfTextAtSize(text, fontSize);
+      x = pos.rightXFrac * pageW - textWidth;
     } else {
       x = pos.xFrac * pageW;
     }
     const yTop = pos.yFrac * pageH;
-    const y = pageH - yTop - FONT_SIZE * 0.8;
-    page.drawText(text, { x, y, size: FONT_SIZE, font, color: rgb(0, 0, 0.55) });
+    const y = pageH - yTop - fontSize * 0.8;
+    page.drawText(text, { x, y, size: fontSize, font, color: rgb(0, 0, 0.55) });
   });
 
   const bytes = await pdfDoc.save();
