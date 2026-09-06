@@ -370,15 +370,97 @@ async function handleGenerateVsdx() {
   }
 }
 
-/* ---------------- Генерация PDF (через печать браузера) ---------------- */
+/* ---------------- Генерация PDF (готовый .vsdx-шаблон) — настоящее скачивание ---------------- */
+//
+// Раньше здесь просто вызывался window.print(), и пользователю приходилось
+// самому в диалоге печати выбирать "Сохранить как PDF" — то есть файл на
+// самом деле не "скачивался". Теперь фирменный лист (#printSheet) рисуется
+// через html2canvas в картинку и вставляется в PDF через jsPDF — получаем
+// обычный файл, который браузер сохраняет сам, без диалога печати.
 
-function handleGeneratePdf() {
+async function handleGeneratePdf() {
   if (!currentTemplate) return;
+  setStatus('genStatus', 'Формирую PDF...');
+  const sheetEl = document.querySelector('#printSheet .sheet');
+  if (!sheetEl) {
+    setStatus('genStatus', 'Не найден лист для печати.', 'err');
+    return;
+  }
   document.querySelectorAll('#printSheet [data-print]').forEach((node) => {
     const key = node.getAttribute('data-print');
     node.textContent = currentFieldValues[key] || '';
   });
-  window.print();
+
+  const printSheetWrap = el('printSheet');
+  // #printSheet обычно display:none (виден только через CSS @media print) —
+  // html2canvas не умеет снимать невидимые элементы, поэтому на время
+  // рендера временно показываем его, но уводим за пределы экрана, чтобы
+  // пользователь не видел "моргания" вёрстки.
+  const prevStyles = {
+    display: printSheetWrap.style.display,
+    position: printSheetWrap.style.position,
+    left: printSheetWrap.style.left,
+    top: printSheetWrap.style.top,
+  };
+  printSheetWrap.style.display = 'block';
+  printSheetWrap.style.position = 'fixed';
+  printSheetWrap.style.left = '-10000px';
+  printSheetWrap.style.top = '0';
+
+  try {
+    const canvas = await html2canvas(sheetEl, { scale: 2, backgroundColor: '#ffffff', useCORS: true });
+    const { jsPDF } = jspdf;
+    const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    const pageWidthMm = pdf.internal.pageSize.getWidth();
+    const pageHeightMm = pdf.internal.pageSize.getHeight();
+    const imgWidthMm = pageWidthMm;
+    const imgHeightMm = (canvas.height * imgWidthMm) / canvas.width;
+    const imgData = canvas.toDataURL('image/jpeg', 0.95);
+
+    if (imgHeightMm <= pageHeightMm) {
+      pdf.addImage(imgData, 'JPEG', 0, 0, imgWidthMm, imgHeightMm);
+    } else {
+      // Лист выше одной страницы A4 — режем картинку на страницы по высоте.
+      let renderedMm = 0;
+      const pxPerMm = canvas.width / imgWidthMm;
+      let first = true;
+      while (renderedMm < imgHeightMm) {
+        const sliceHeightMm = Math.min(pageHeightMm, imgHeightMm - renderedMm);
+        const sliceCanvas = document.createElement('canvas');
+        sliceCanvas.width = canvas.width;
+        sliceCanvas.height = Math.round(sliceHeightMm * pxPerMm);
+        const ctx = sliceCanvas.getContext('2d');
+        ctx.drawImage(
+          canvas,
+          0, Math.round(renderedMm * pxPerMm), canvas.width, sliceCanvas.height,
+          0, 0, canvas.width, sliceCanvas.height
+        );
+        const sliceData = sliceCanvas.toDataURL('image/jpeg', 0.95);
+        if (!first) pdf.addPage();
+        pdf.addImage(sliceData, 'JPEG', 0, 0, imgWidthMm, sliceHeightMm);
+        renderedMm += sliceHeightMm;
+        first = false;
+      }
+    }
+
+    const filename = buildOutputFilename('pdf');
+    pdf.save(filename);
+    setStatus('genStatus', `Скачан файл ${filename}`, 'ok');
+  } catch (err) {
+    console.error(err);
+    setStatus('genStatus', 'Ошибка формирования PDF: ' + err.message, 'err');
+  } finally {
+    // Возвращаем #printSheet в скрытое состояние сразу после скачивания —
+    // не дожидаясь журнала (см. ниже), чтобы не держать лист "показанным"
+    // (пусть и за пределами экрана) дольше, чем нужно на случай, если
+    // запись в Google Таблицу зависнет или долго не отвечает.
+    printSheetWrap.style.display = prevStyles.display;
+    printSheetWrap.style.position = prevStyles.position;
+    printSheetWrap.style.left = prevStyles.left;
+    printSheetWrap.style.top = prevStyles.top;
+  }
+  // Журнал пишется отдельно и не блокирует ни скачивание, ни возврат листа
+  // в скрытое состояние — ошибка логирования не должна мешать пользователю.
   logToSheet(buildLogEntry('pdf'));
 }
 
