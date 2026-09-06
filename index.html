@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>БСИ — короткие спецификации теплообменников</title>
+<link rel="stylesheet" href="css/style.css" />
+
+<!-- Библиотеки — собраны локально в vendor/, CDN не требуется для загрузки самого приложения.
+     Исключение: Tesseract.js при OCR-распознавании сам подтягивает языковые данные
+     и wasm-ядро с CDN (jsdelivr) — для этого шага браузеру пользователя нужен интернет. -->
+<script src="vendor/pdf.min.js"></script>
+<script src="vendor/jszip.min.js"></script>
+<script src="vendor/tesseract.min.js"></script>
+</head>
+<body>
+
+<header class="appbar">
+  <h1>Короткие спецификации теплообменников БСИ</h1>
+  <p>Загрузите отчёт BelTO/ТеплоХИТ — сервис перенесёт данные в фирменный лист и сконвертирует единицы измерения</p>
+</header>
+
+<main>
+
+  <section class="card">
+    <h2><span class="step-num">1</span>Шаблон</h2>
+    <div class="tpl-mode-row">
+      <label class="radio-label"><input type="radio" name="tplMode" id="tplModeBuiltin" checked /> Готовый шаблон из списка</label>
+      <label class="radio-label"><input type="radio" name="tplMode" id="tplModeCustom" /> Свой PDF-шаблон (загрузить)</label>
+    </div>
+
+    <div id="builtinTplBlock">
+      <select id="templateSelect"></select>
+      <div class="status-line" id="templateHint"></div>
+    </div>
+
+    <div id="customTplBlock" style="display:none;">
+      <input type="file" id="customTplInput" accept=".pdf" />
+      <div class="hint">Загрузите свой PDF-шаблон (например экспорт из Visio) — при первой загрузке нужно один раз указать мышкой, куда писать каждое значение. Дальше это же файл распознаётся автоматически.</div>
+      <div class="status-line" id="customTplStatus"></div>
+      <div id="customTplActions" style="display:none; margin-top:10px;" class="actions-row">
+        <button id="btnRemapTpl" class="secondary">Разметить заново</button>
+        <button id="btnExportMapping" class="secondary">Скачать разметку</button>
+        <label class="secondary file-btn-label">
+          Загрузить разметку
+          <input type="file" id="importMappingInput" accept=".json" style="display:none;" />
+        </label>
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2><span class="step-num">2</span>Спецификация-источник (BelTO)</h2>
+    <div class="dropzone" id="dropzone">
+      <div>Перетащите файл сюда или нажмите, чтобы выбрать</div>
+      <div class="hint">HTML-экспорт BelTO (точнее всего) / PDF (текстовый или скан) / JPG / PNG</div>
+      <input type="file" id="fileInput" accept=".html,.htm,.pdf,.jpg,.jpeg,.png" />
+    </div>
+    <div class="status-line" id="parseStatus"></div>
+    <details id="debugDetails" style="display:none; margin-top:10px;">
+      <summary>Что удалось распознать (для проверки)</summary>
+      <div class="debug-box" id="debugBox"></div>
+    </details>
+  </section>
+
+  <section class="card" id="formSection" style="display:none;">
+    <h2><span class="step-num">3</span>Проверьте и заполните поля</h2>
+
+    <div class="section-title">Автоматически распознано из спецификации — проверьте перед генерацией</div>
+    <div class="field-grid" id="autoFields"></div>
+
+    <div class="section-title">Всегда вводится вручную (в спецификации BelTO этого нет)</div>
+    <div class="field-grid" id="manualFields"></div>
+  </section>
+
+  <section class="card" id="actionsSection" style="display:none;">
+    <h2><span class="step-num">4</span>Сформировать документ</h2>
+    <div class="actions-row" id="builtinActions">
+      <button id="btnVsdx">Скачать .vsdx</button>
+      <button id="btnPdf" class="secondary">Сформировать PDF (печать браузера)</button>
+    </div>
+    <div class="actions-row" id="customActions" style="display:none;">
+      <button id="btnCustomPdf">Скачать PDF (по своему шаблону)</button>
+    </div>
+    <div class="status-line" id="genStatus"></div>
+    <div class="hint" style="margin-top:8px; color:#6b7280; font-size:12px;">
+      Журнал расчётов ведётся в Google Таблице — при генерации данные отправляются туда автоматически
+      (если в <code>js/config.js</code> указан адрес Google Apps Script).
+    </div>
+  </section>
+
+</main>
+
+<!-- ============ Печатный лист (скрыт, используется только для PDF через печать) ============ -->
+<div id="printSheet">
+  <div class="sheet" id="sheetTor15m13">
+    <div class="company-header">
+      <div class="company-name">ОАО "БПА БЕЛСТРОЙИНДУСТРИЯ"</div>
+      <div class="company-meta">
+        Республика Беларусь, 220075, г. Минск, ул. Селицкого, 17а<br/>
+        www.bpabsi.by · тел. (017)364-74-06, (017)364-82-79 · bsi_teso@bpabsi.by<br/>
+        № <span data-print="calc_number">--/---2026</span>
+      </div>
+    </div>
+    <div class="title">РАСЧЁТ ТЕПЛООБМЕННИКА ТОР-15М/13</div>
+
+    <table>
+      <tr><td style="width:22%"><b>Заказчик</b></td><td colspan="3" data-print="customer"></td></tr>
+      <tr><td><b>Место установки</b></td><td colspan="3" data-print="site"></td></tr>
+      <tr><td><b>Контактное лицо</b></td><td data-print="contact_person"></td>
+          <td><b>Телефон / E-mail</b></td><td data-print="contact_info"></td></tr>
+    </table>
+
+    <table>
+      <tr>
+        <th style="width:26%">Наименование</th>
+        <th style="width:10%">Ед. изм</th>
+        <th style="width:32%">Греющая среда</th>
+        <th style="width:32%">Нагреваемая среда</th>
+      </tr>
+      <tr class="section-row"><td colspan="4">ИСХОДНЫЕ ДАННЫЕ</td></tr>
+      <tr><td>Тепловая нагрузка</td><td>Гкал/ч</td><td colspan="2" data-print="heat_load"></td></tr>
+      <tr><td>Температурный график сетевой воды</td><td>°C</td><td colspan="2" data-print="temp_graph"></td></tr>
+      <tr class="section-row"><td colspan="4">РАСЧЁТ</td></tr>
+      <tr><td>Температура, вход-выход</td><td>°C</td><td data-print="temp_hot"></td><td data-print="temp_cold"></td></tr>
+      <tr><td>Расход</td><td>т/ч</td><td data-print="flow_hot"></td><td data-print="flow_cold"></td></tr>
+      <tr><td>Потери давления</td><td>кг/см2</td><td data-print="dp_hot"></td><td data-print="dp_cold"></td></tr>
+      <tr><td>Количество пластин</td><td>шт</td><td colspan="2" data-print="plates_count"></td></tr>
+      <tr><td>Число ходов</td><td>ход</td><td colspan="2" data-print="passes_count"></td></tr>
+      <tr><td>Коэффициент теплопередачи</td><td>Вт/м2°C</td><td colspan="2" data-print="heat_transfer_coef"></td></tr>
+      <tr><td>Запас по поверхности</td><td>%</td><td colspan="2" data-print="surface_margin"></td></tr>
+      <tr><td>Поверхность теплообмена</td><td>м2</td><td colspan="2" data-print="heat_surface"></td></tr>
+      <tr><td><b>Марка теплообменника</b></td><td>—</td><td colspan="2" data-print="model"></td></tr>
+      <tr><td>Цена без НДС за единицу</td><td>руб</td><td colspan="2" data-print="price_unit"></td></tr>
+      <tr><td><b>ИТОГО цена без НДС</b></td><td>руб</td><td colspan="2" data-print="price_total"></td></tr>
+    </table>
+
+    <table>
+      <tr><th colspan="2">Габаритные размеры</th></tr>
+      <tr><td>DN, мм</td><td data-print="dn"></td></tr>
+      <tr><td>L, мм</td><td data-print="dim_l"></td></tr>
+      <tr><td>Масса, кг</td><td data-print="mass"></td></tr>
+    </table>
+
+    <div class="diagram-title">Общий вид теплообменника</div>
+    <div class="diagram-wrap">
+      <img src="assets/tor-15m-13-1x-diagram.png" alt="Общий вид ТОР-15М/13-1х" />
+    </div>
+
+    <div class="footer-note">ВНИМАНИЕ: изделие должно эксплуатироваться строго в соответствии с исходными и расчётными параметрами!</div>
+
+    <div class="signature-row">
+      <div>Расчёт выполнил: <span data-print="executor"></span></div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ Мастер разметки своего PDF-шаблона (модальный оверлей) ============ -->
+<div id="mappingWizard" class="wizard-overlay" style="display:none;">
+  <div class="wizard-box">
+    <div class="wizard-header">
+      <div>
+        <div id="wizardFieldLabel" class="wizard-field-label"></div>
+        <div class="hint">Кликните на странице ниже, куда должно попасть это значение. Если такого поля в вашем шаблоне нет — нажмите «Пропустить».</div>
+      </div>
+      <div id="wizardProgress" class="wizard-progress"></div>
+    </div>
+    <div class="wizard-canvas-wrap">
+      <canvas id="wizardCanvas"></canvas>
+    </div>
+    <div class="wizard-actions actions-row">
+      <button id="btnWizardSkip" class="secondary">Пропустить (нет такого поля)</button>
+      <button id="btnWizardCancel" class="secondary">Отмена разметки</button>
+    </div>
+  </div>
+</div>
+
+<script src="vendor/fontkit.umd.min.js"></script>
+<script src="vendor/pdf-lib.min.js"></script>
+<script src="js/config.js?v=8"></script>
+<script src="js/units.js?v=8"></script>
+<script src="js/fieldMap.js?v=8"></script>
+<script src="js/beltoParser.js?v=8"></script>
+<script src="js/extract.js?v=8"></script>
+<script src="js/vsdxBuilder.js?v=8"></script>
+<script src="js/pdfTemplate.js?v=8"></script>
+<script src="js/sheetsLog.js?v=8"></script>
+<script src="js/app.js?v=8"></script>
+</body>
+</html>
