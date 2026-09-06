@@ -106,7 +106,18 @@ async function fillDocxTemplate(templateBytes, values, certificatesNoteText, dia
     },
   });
 
-  const doc = new docxtemplater(zip, { modules: [imageModule], paragraphLoop: true, linebreaks: false });
+  // ВАЖНО: без своего nullGetter докстемплейтер по умолчанию подставляет
+  // ЛИТЕРАЛЬНУЮ строку "undefined" вместо пустого поля (см.
+  // vendor/docxtemplater.min.js: nullGetter:function(e){return e.module?"":"undefined"})
+  // — если сотрудник не заполнил необязательное поле (адрес, цену, габариты
+  // и т.п.), в готовом документе вместо пустой ячейки печаталось бы слово
+  // "undefined". Отдаём пустую строку для любого отсутствующего/пустого тега.
+  const doc = new docxtemplater(zip, {
+    modules: [imageModule],
+    paragraphLoop: true,
+    linebreaks: false,
+    nullGetter: () => '',
+  });
 
   const data = { ...values };
   data.certificates_note = buildCertificatesRawXml(certificatesNoteText);

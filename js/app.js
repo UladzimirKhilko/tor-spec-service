@@ -382,15 +382,31 @@ async function handleGenerateVsdx() {
 // "/MM-ГГГГ" (закрашиваем и перерисовываем весь "№ ..." целиком — см.
 // комментарий у calc_number в builtinPdfMapping.js). Если номер не введён —
 // ничего не рисуем и не трогаем исходный "№ --/---2020" с бланка.
+// Все теги, которые ждёт Word-шаблон (templates/BSI-letterhead-template.docx) —
+// см. полный список в js/docxTemplate.js. Явно перечисляем их здесь и берём
+// каждое значение с фолбэком на '', чтобы в документ никогда не попадало
+// "undefined" (ни от докстемплейтера, ни от case, когда поле есть в объекте,
+// но со значением undefined) — сотрудник мог просто не тронуть необязательное
+// поле, это нормально, тогда в ячейке должно остаться пусто.
+const LETTERHEAD_VALUE_KEYS = [
+  'site', 'customer', 'contact_person', 'contact_info',
+  'heat_load', 'temp_graph', 'temp_hot', 'temp_cold', 'flow_hot', 'flow_cold',
+  'dp_hot', 'dp_cold', 'plates_count', 'passes_count', 'heat_transfer_coef',
+  'surface_margin', 'heat_surface', 'model', 'price_unit', 'price_total',
+  'dim_a', 'dim_l', 'mass', 'certificates_note',
+];
+
 function buildLetterheadValues() {
   const formattedCalcNumber = formatCalcNumber(currentFieldValues['calc_number']);
   // DN (условный диаметр) в бланке напечатан у всех 4 патрубков сразу
   // (Т1/Т2/В1/Т3) — одно и то же значение дублируется в 4 "синтетических"
   // поля dn_1..dn_4 (см. LETTERHEAD_FIELDS в builtinPdfMapping.js), как и
   // shapeIds:[7,42,43,45] делают то же самое для .vsdx-варианта.
-  const dnValue = currentFieldValues['dn'];
+  const dnValue = currentFieldValues['dn'] || '';
+  const values = {};
+  LETTERHEAD_VALUE_KEYS.forEach((key) => { values[key] = currentFieldValues[key] || ''; });
   return {
-    ...currentFieldValues,
+    ...values,
     executor_name: (currentFieldValues['executor'] || '').trim(),
     // Дата всегда сегодняшняя на момент формирования документа — не
     // зависит от того, заполнено ли ФИО.
