@@ -6,18 +6,33 @@
  * ощутимо отличалась от настоящего фирменного бланка: другой порядок строк,
  * не было логотипов ISO/EAC, блока "Примечание" с сертификатами и т.д.
  *
- * Теперь вместо реконструкции берётся НАСТОЯЩИЙ файл бланка
- * (templates/TOR-15M_13-1x-original.pdf — тот самый .pdf, который прислал
- * инженер как образец) и поверх него тем же самым механизмом, что и для
- * "своего PDF-шаблона" (js/pdfTemplate.js, pdf-lib + fontkit + DejaVu Sans),
- * дорисовываются только сами значения — результат совпадает с образцом
- * один в один, отличаются только вписанные цифры/текст.
+ * Теперь вместо реконструкции берётся НАСТОЯЩИЙ файл бланка и поверх него
+ * pdf-lib (+ fontkit + DejaVu Sans, js/pdfTemplate.js) дорисовываются только
+ * сами значения — результат совпадает с образцом один в один, отличаются
+ * только вписанные цифры/текст.
  *
  * Координаты (xFrac/yFrac — доли ширины/высоты страницы от левого верхнего
  * угла) сняты один раз вручную из текстового слоя PDF (pdfplumber:
- * page.find_tables() + extract_words()) — то есть это ручная "разметка",
- * просто сделанная программно, а не кликами мышкой в мастере (мастер для
- * такого фиксированного, всегда одного и того же бланка не нужен).
+ * page.find_tables() + extract_words()) для самого первого бланка
+ * (ТОР-15М/13-1х). У БСИ вся линейка бланков — это ОДИН И ТОТ ЖЕ фирменный
+ * лист, меняется только картинка теплообменника и марка/размеры в тексте —
+ * сама таблица (расположение строк и колонок) везде одинаковая. Поэтому эти
+ * координаты (LETTERHEAD_FIELDS ниже) — общие для ВСЕЙ линейки бланков, а не
+ * только для одного конкретного файла:
+ *
+ *  - BUILTIN_LETTERHEAD_TEMPLATES — бланки, которые уже проверены и лежат в
+ *    самом сервисе (добавляются сюда после того, как кто-то — сейчас я —
+ *    один раз сверил координаты на конкретном файле и убедился, что всё
+ *    совпадает); показываются в выпадающем списке "Готовый шаблон".
+ *  - "Свой бланк" (см. app.js, custom-letterhead режим) — самообслуживание:
+ *    сотрудник загружает PDF нового бланка (той же линейки, просто с другой
+ *    картинкой/маркой) САМ, без чьей-либо помощи — те же координаты
+ *    применяются сразу, без разметки мышкой. Чтобы не полагаться вслепую на
+ *    то, что верстка у нового файла и правда пиксель-в-пиксель совпадает,
+ *    там есть кнопка "Проверить совмещение" (тестовый PDF с заметными
+ *    значениями во всех полях) и, если что-то всё же съехало на пару
+ *    миллиметров — два числа "сдвиг по X/Y" (buildLetterheadMapping ниже),
+ *    а не полная разметка по 26 полям заново.
  *
  * У некоторых полей в оригинальном бланке уже напечатан образец значения
  * (например "Марка теплообменника: ТОР-15М/13-1х(LL+НН)", "Число ходов: 1",
@@ -29,101 +44,105 @@
  * "executor" в форме — это поле ФИО, а в самом бланке подпись и дата — две
  * РАЗНЫЕ области (между ними ещё напечатаны телефон/факс/e-mail): ФИО пишется
  * в executor_name как есть, а дата (executor_date) всегда подставляется
- * текущая на момент формирования документа (см. handleGeneratePdf в app.js) —
- * пользователю вводить её не нужно.
+ * текущая на момент формирования документа (см. buildLetterheadValues в
+ * app.js) — пользователю вводить её не нужно.
  */
 
-const BUILTIN_PDF_TEMPLATE_FILE = 'templates/TOR-15M_13-1x-original.pdf';
+const LETTERHEAD_PAGE = { width: 594.75, height: 841.5 };
 
-const BUILTIN_PDF_MAPPING = {
-  fileName: 'TOR-15M_13-1x-original.pdf',
-  pageWidth: 594.75,
-  pageHeight: 841.5,
-  fields: {
-    site:            { xFrac: 0.30265, yFrac: 0.13589 },
-    customer:        { xFrac: 0.30265, yFrac: 0.15270 },
-    contact_person:  { xFrac: 0.30265, yFrac: 0.16958 },
-    contact_info:    { xFrac: 0.30265, yFrac: 0.18645 },
+const LETTERHEAD_FIELDS = {
+  site:            { xFrac: 0.30265, yFrac: 0.13589 },
+  customer:        { xFrac: 0.30265, yFrac: 0.15270 },
+  contact_person:  { xFrac: 0.30265, yFrac: 0.16958 },
+  contact_info:    { xFrac: 0.30265, yFrac: 0.18645 },
 
-    heat_load:       { xFrac: 0.39647, yFrac: 0.26221 },
-    temp_graph:      { xFrac: 0.39647, yFrac: 0.28746 },
-    // L и A — узкие ячейки в правом блоке "Габаритные размеры", значения в
-    // них по просьбе пользователя пишутся по центру ячейки, а не от края.
-    dim_l:           { xFrac: 0.74552, yFrac: 0.27908, align: 'center', centerXFrac: 0.84599 },
-    dim_a: {
-      xFrac: 0.74552, yFrac: 0.26221, align: 'center', centerXFrac: 0.84599,
-      // В образце в этой ячейке уже напечатано "2,55*" — закрываем перед
-      // вписыванием настоящего значения.
-      redact: { xFrac: 0.74048, yFrac: 0.25977, wFrac: 0.21101, hFrac: 0.01438 },
-    },
-    mass:            { xFrac: 0.74552, yFrac: 0.29596, align: 'center', centerXFrac: 0.84599 },
+  heat_load:       { xFrac: 0.39647, yFrac: 0.26221 },
+  temp_graph:      { xFrac: 0.39647, yFrac: 0.28746 },
+  // L и A — узкие ячейки в правом блоке "Габаритные размеры", значения в
+  // них по просьбе пользователя пишутся по центру ячейки, а не от края.
+  dim_l:           { xFrac: 0.74552, yFrac: 0.27908, align: 'center', centerXFrac: 0.84599 },
+  dim_a: {
+    xFrac: 0.74552, yFrac: 0.26221, align: 'center', centerXFrac: 0.84599,
+    // В образце в этой ячейке уже напечатано "2,55*" — закрываем перед
+    // вписыванием настоящего значения.
+    redact: { xFrac: 0.74048, yFrac: 0.25977, wFrac: 0.21101, hFrac: 0.01438 },
+  },
+  mass:            { xFrac: 0.74552, yFrac: 0.29596, align: 'center', centerXFrac: 0.84599 },
 
-    temp_hot:        { xFrac: 0.39647, yFrac: 0.32959 },
-    temp_cold:       { xFrac: 0.50727, yFrac: 0.32959 },
-    flow_hot:        { xFrac: 0.39647, yFrac: 0.34641 },
-    flow_cold:       { xFrac: 0.50727, yFrac: 0.34641 },
-    dp_hot:          { xFrac: 0.39647, yFrac: 0.36328 },
-    dp_cold:         { xFrac: 0.50727, yFrac: 0.36328 },
-    plates_count:    { xFrac: 0.39647, yFrac: 0.38010 },
+  temp_hot:        { xFrac: 0.39647, yFrac: 0.32959 },
+  temp_cold:       { xFrac: 0.50727, yFrac: 0.32959 },
+  flow_hot:        { xFrac: 0.39647, yFrac: 0.34641 },
+  flow_cold:       { xFrac: 0.50727, yFrac: 0.34641 },
+  dp_hot:          { xFrac: 0.39647, yFrac: 0.36328 },
+  dp_cold:         { xFrac: 0.50727, yFrac: 0.36328 },
+  plates_count:    { xFrac: 0.39647, yFrac: 0.38010 },
 
-    passes_count: {
-      xFrac: 0.39647, yFrac: 0.39691,
-      redact: { xFrac: 0.39142, yFrac: 0.39441, wFrac: 0.25036, hFrac: 0.01450 },
-    },
+  passes_count: {
+    xFrac: 0.39647, yFrac: 0.39691,
+    redact: { xFrac: 0.39142, yFrac: 0.39441, wFrac: 0.25036, hFrac: 0.01450 },
+  },
 
-    heat_transfer_coef: { xFrac: 0.39647, yFrac: 0.41378 },
-    surface_margin:     { xFrac: 0.39647, yFrac: 0.43066 },
-    heat_surface:       { xFrac: 0.39647, yFrac: 0.44747 },
+  heat_transfer_coef: { xFrac: 0.39647, yFrac: 0.41378 },
+  surface_margin:     { xFrac: 0.39647, yFrac: 0.43066 },
+  heat_surface:       { xFrac: 0.39647, yFrac: 0.44747 },
 
-    model: {
-      xFrac: 0.30265, yFrac: 0.46429,
-      redact: { xFrac: 0.29760, yFrac: 0.46179, wFrac: 0.34418, hFrac: 0.01450 },
-    },
+  model: {
+    xFrac: 0.30265, yFrac: 0.46429,
+    redact: { xFrac: 0.29760, yFrac: 0.46179, wFrac: 0.34418, hFrac: 0.01450 },
+  },
 
-    price_unit:  { xFrac: 0.39647, yFrac: 0.48116 },
-    price_total: { xFrac: 0.39647, yFrac: 0.49804 },
+  price_unit:  { xFrac: 0.39647, yFrac: 0.48116 },
+  price_total: { xFrac: 0.39647, yFrac: 0.49804 },
 
-    calc_number: {
-      // Между напечатанным "№" и краем листа было слишком мало места для
-      // номера переменной длины — по итогам обсуждения решили не уменьшать
-      // шрифт, а вместо этого закрасить и сам напечатанный значок "№" и
-      // написать всю надпись "№ 19234/09-2026" заново целиком (см.
-      // handleGeneratePdf в app.js, который подставляет сюда готовую строку
-      // с "№ " в начале) — сдвинутую левее, во весь исходный размер шрифта.
-      // Выравнивание по правому краю (rightXFrac) держит одинаковый отступ
-      // от кромки страницы независимо от длины номера.
-      xFrac: 0.83000, yFrac: 0.03951, align: 'right', rightXFrac: 0.97480,
-      redact: { xFrac: 0.82500, yFrac: 0.03600, wFrac: 0.15500, hFrac: 0.01750 },
-    },
-    // Синтетические поля — см. пояснение выше про разбор "executor".
-    executor_name: {
-      xFrac: 0.22867, yFrac: 0.90226,
-      redact: { xFrac: 0.22699, yFrac: 0.89958, wFrac: 0.13283, hFrac: 0.01485 },
-    },
-    executor_date: {
-      xFrac: 0.86927, yFrac: 0.90226,
-      redact: { xFrac: 0.86759, yFrac: 0.89958, wFrac: 0.07902, hFrac: 0.01485 },
-    },
+  calc_number: {
+    // Между напечатанным "№" и краем листа было слишком мало места для
+    // номера переменной длины — решили не уменьшать шрифт, а вместо этого
+    // закрасить и сам напечатанный значок "№", и написать всю надпись
+    // "№ 19234/09-2026" заново целиком (см. buildLetterheadValues в app.js,
+    // который подставляет сюда готовую строку с "№ " в начале) — сдвинутую
+    // левее, во весь исходный размер шрифта. Выравнивание по правому краю
+    // (rightXFrac) держит одинаковый отступ от кромки страницы независимо
+    // от длины номера.
+    xFrac: 0.83000, yFrac: 0.03951, align: 'right', rightXFrac: 0.97480,
+    redact: { xFrac: 0.82500, yFrac: 0.03600, wFrac: 0.15500, hFrac: 0.01750 },
+  },
+  // Синтетические поля — см. пояснение выше про разбор "executor".
+  executor_name: {
+    xFrac: 0.22867, yFrac: 0.90226,
+    redact: { xFrac: 0.22699, yFrac: 0.89958, wFrac: 0.13283, hFrac: 0.01485 },
+  },
+  executor_date: {
+    xFrac: 0.86927, yFrac: 0.90226,
+    redact: { xFrac: 0.86759, yFrac: 0.89958, wFrac: 0.07902, hFrac: 0.01485 },
+  },
 
-    // Блок "Примечание" справа (сертификаты, ТР ТС, материал пластин,
-    // рабочие параметры) — целиком закрашивается и перерисовывается по
-    // содержимому текстового поля certificates_note (см. renderForm/app.js),
-    // чтобы его можно было проверить и поправить (например обновить номер
-    // или дату сертификата), а не только смотреть на заводской текст.
-    certificates_note: {
-      xFrac: 0.64901, yFrac: 0.32799,
-      // Шрифт заметно уже, чем в оригинале (Times New Roman) — 7pt подобран
-      // так, чтобы ни одна строка образца не переносилась по словам; 8.6pt
-      // межстрочный интервал (вместо "родных" ~9.4) — оставляет запас на
-      // случай, если пользователь впишет более длинный текст и появится
-      // лишняя перенесённая строка, не вылезая за рамку ячейки.
-      multiline: true, fontSize: 7, maxWidthFrac: 0.3008, lineHeightFrac: 0.01022,
-      redact: { xFrac: 0.64515, yFrac: 0.32715, wFrac: 0.30635, hFrac: 0.18289 },
-    },
+  // Блок "Примечание" справа (сертификаты, ТР ТС, материал пластин,
+  // рабочие параметры) — целиком закрашивается и перерисовывается по
+  // содержимому текстового поля certificates_note (см. renderForm/app.js),
+  // чтобы его можно было проверить и поправить (например обновить номер
+  // или дату сертификата), а не только смотреть на заводской текст.
+  certificates_note: {
+    xFrac: 0.64901, yFrac: 0.32799,
+    // Шрифт заметно уже, чем в оригинале (Times New Roman) — 7pt подобран
+    // так, чтобы ни одна строка образца не переносилась по словам; 8.6pt
+    // межстрочный интервал (вместо "родных" ~9.4) — оставляет запас на
+    // случай, если пользователь впишет более длинный текст и появится
+    // лишняя перенесённая строка, не вылезая за рамку ячейки.
+    multiline: true, fontSize: 7, maxWidthFrac: 0.3008, lineHeightFrac: 0.01022,
+    redact: { xFrac: 0.64515, yFrac: 0.32715, wFrac: 0.30635, hFrac: 0.18289 },
   },
 };
 
-const BUILTIN_PDF_FIELD_KEYS = Object.keys(BUILTIN_PDF_MAPPING.fields);
+const BUILTIN_PDF_FIELD_KEYS = Object.keys(LETTERHEAD_FIELDS);
+
+// Бланки, для которых координаты уже сверены и подтверждены (пиксель-в-
+// пиксель совпадают с LETTERHEAD_FIELDS) — показываются в выпадающем списке
+// "Готовый шаблон". Чтобы добавить новую модель сюда, нужно свериться на
+// реальном PDF-образце (обычно достаточно сгенерировать тестовый PDF через
+// buildLetterheadMapping(0,0) и визуально сравнить с образцом).
+const BUILTIN_LETTERHEAD_TEMPLATES = [
+  { id: 'tor-15m-13-1x', title: 'ТОР-15М/13-1х (LL+НН)', file: 'templates/TOR-15M_13-1x-original.pdf' },
+];
 
 // Исходный текст блока "Примечание" из образца — подставляется в форму по
 // умолчанию, чтобы пользователь мог его проверить и при необходимости
@@ -147,12 +166,46 @@ const DEFAULT_CERTIFICATES_TEXT = [
   'Рабочее давление - 1,6 МПа',
 ].join('\n');
 
-let cachedBuiltinPdfBytes = null;
-async function getBuiltinPdfTemplateBytes() {
-  if (!cachedBuiltinPdfBytes) {
-    const resp = await fetch(BUILTIN_PDF_TEMPLATE_FILE);
-    if (!resp.ok) throw new Error(`Не удалось загрузить бланк ${BUILTIN_PDF_TEMPLATE_FILE}`);
-    cachedBuiltinPdfBytes = await resp.arrayBuffer();
+// Байты PDF-файлов бланков — кэшируем по пути к файлу (не по одному общему
+// файлу, как раньше), потому что бланков теперь несколько.
+const letterheadBytesCache = new Map();
+async function getLetterheadTemplateBytes(file) {
+  if (!letterheadBytesCache.has(file)) {
+    letterheadBytesCache.set(file, (async () => {
+      const resp = await fetch(file);
+      if (!resp.ok) throw new Error(`Не удалось загрузить бланк ${file}`);
+      return resp.arrayBuffer();
+    })());
   }
-  return cachedBuiltinPdfBytes;
+  return letterheadBytesCache.get(file);
+}
+
+// Сдвигает одну позицию поля на (dxFrac, dyFrac) — используется для "своего
+// бланка" (самообслуживание), когда верстка нового файла на пару миллиметров
+// отличается от эталонной и нужна общая поправка по X/Y для всех полей сразу.
+function shiftFieldPos(pos, dxFrac, dyFrac) {
+  const shifted = { ...pos };
+  if (shifted.xFrac !== undefined) shifted.xFrac += dxFrac;
+  if (shifted.yFrac !== undefined) shifted.yFrac += dyFrac;
+  if (shifted.centerXFrac !== undefined) shifted.centerXFrac += dxFrac;
+  if (shifted.rightXFrac !== undefined) shifted.rightXFrac += dxFrac;
+  if (shifted.redact) {
+    shifted.redact = { ...shifted.redact, xFrac: shifted.redact.xFrac + dxFrac, yFrac: shifted.redact.yFrac + dyFrac };
+  }
+  return shifted;
+}
+
+// Строит объект mapping (в формате, который принимает fillPdfTemplate) для
+// линейки фирменных бланков БСИ, с необязательной общей поправкой
+// смещения — для готовых, заранее сверенных бланков смещение всегда 0/0,
+// для "своего бланка" оно берётся из того, что сотрудник подобрал в блоке
+// проверки совмещения (см. app.js).
+function buildLetterheadMapping(offsetXFrac, offsetYFrac) {
+  const dx = offsetXFrac || 0;
+  const dy = offsetYFrac || 0;
+  const fields = {};
+  BUILTIN_PDF_FIELD_KEYS.forEach((key) => {
+    fields[key] = (dx || dy) ? shiftFieldPos(LETTERHEAD_FIELDS[key], dx, dy) : LETTERHEAD_FIELDS[key];
+  });
+  return { pageWidth: LETTERHEAD_PAGE.width, pageHeight: LETTERHEAD_PAGE.height, fields };
 }

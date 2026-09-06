@@ -7,14 +7,24 @@ let currentTemplate = null;
 let currentFieldValues = {}; // key -> string (то, что реально попадёт в документ)
 let currentDebugMatches = [];
 
-// "builtin" — готовый .vsdx-шаблон из фиксированного списка (js/fieldMap.js);
-// "custom-pdf" — произвольный PDF, который инженер загрузил и разметил сам
-// (см. js/pdfTemplate.js) — без какой-либо заранее подготовленной базы.
+// "builtin" — готовый бланк из проверенного списка (js/builtinPdfMapping.js,
+// BUILTIN_LETTERHEAD_TEMPLATES); "custom-pdf" — сотрудник сам загружает PDF
+// бланка того же вида (другая модель/картинка) — координаты полей общие для
+// всей линейки бланков (см. комментарий в builtinPdfMapping.js), поэтому
+// разметка мышкой не нужна — только необязательная поправка смещения по
+// X/Y, если у конкретного файла вёрстка чуть-чуть отличается.
 let templateMode = 'builtin';
-let customTplBytes = null;   // ArrayBuffer исходного PDF-шаблона как есть
+let customTplBytes = null;   // ArrayBuffer исходного PDF-бланка как есть
 let customTplHash = null;
 let customTplFileName = null;
-let customTplMapping = null; // { hash, fileName, pageWidth, pageHeight, fields: { key: {xFrac,yFrac} } }
+let customTplOffsetXFrac = 0;
+let customTplOffsetYFrac = 0;
+
+const PT_PER_MM = 2.8346456693;
+const mmToXFrac = (mm) => (Number(mm) || 0) * PT_PER_MM / LETTERHEAD_PAGE.width;
+const mmToYFrac = (mm) => (Number(mm) || 0) * PT_PER_MM / LETTERHEAD_PAGE.height;
+const xFracToMm = (frac) => (frac * LETTERHEAD_PAGE.width) / PT_PER_MM;
+const yFracToMm = (frac) => (frac * LETTERHEAD_PAGE.height) / PT_PER_MM;
 
 const el = (id) => document.getElementById(id);
 
@@ -31,18 +41,23 @@ function initTemplateSelect() {
   setTemplate(TEMPLATES[0].id);
 }
 
+// Блок "Примечание" (сертификаты и т.п.) заранее заполняется текстом из
+// образца — чтобы пользователь мог его сразу проверить и, если нужно,
+// поправить, а не начинать с пустого поля. Общая логика для готового бланка
+// и "своего бланка" — оба используют один и тот же набор полей.
+function applyDefaultFieldValues(fields) {
+  currentFieldValues = {};
+  if (fields.some((f) => f.key === 'certificates_note')) {
+    currentFieldValues['certificates_note'] = DEFAULT_CERTIFICATES_TEXT;
+  }
+}
+
 function setTemplate(id) {
   currentTemplate = getTemplateById(id);
   el('templateHint').textContent = currentTemplate
     ? `Файл шаблона: ${currentTemplate.file}`
     : '';
-  currentFieldValues = {};
-  // Блок "Примечание" (сертификаты и т.п.) заранее заполняется текстом из
-  // образца — чтобы пользователь мог его сразу проверить и, если нужно,
-  // поправить, а не начинать с пустого поля.
-  if (currentTemplate && currentTemplate.fields.some((f) => f.key === 'certificates_note')) {
-    currentFieldValues['certificates_note'] = DEFAULT_CERTIFICATES_TEXT;
-  }
+  applyDefaultFieldValues(currentTemplate ? currentTemplate.fields : []);
   renderForm();
   el('formSection').style.display = '';
   el('actionsSection').style.display = '';
@@ -69,38 +84,53 @@ function switchTemplateMode(mode) {
     return;
   }
 
-  // custom-pdf
-  currentFieldValues = {};
+  // custom-pdf ("свой бланк") — те же поля, что и у готового бланка,
+  // потому что вся линейка бланков БСИ использует одну и ту же табличную
+  // разметку (см. builtinPdfMapping.js).
   if (customTplFileName) {
-    currentTemplate = { id: 'custom-pdf', title: customTplFileName, fields: PDF_TEMPLATE_FIELDS };
+    currentTemplate = { id: 'custom-letterhead', title: customTplFileName, fields: TEMPLATES[0].fields };
+    applyDefaultFieldValues(currentTemplate.fields);
     el('formSection').style.display = '';
     el('actionsSection').style.display = '';
   } else {
     currentTemplate = null;
+    currentFieldValues = {};
   }
   renderForm();
 }
 
-/* ---------------- Загрузка своего PDF-шаблона + мастер разметки ---------------- */
+/* ---------------- Загрузка своего бланка (самообслуживание, без разметки) ---------------- */
+//
+// Раньше здесь был мастер разметки — инженер кликал мышкой по каждому из
+// ~26 полей на КАЖДОМ новом файле. От этого отказались: у всей линейки
+// фирменных бланков БСИ одна и та же табличная разметка, меняется только
+// картинка теплообменника и марка/размеры в тексте — поэтому координаты,
+// один раз снятые с образца (js/builtinPdfMapping.js, LETTERHEAD_FIELDS),
+// применяются к любому новому бланку этого вида сразу, без единого клика.
+//
+// Подстраховка на случай, если у конкретного файла вёрстка всё же чуть-чуть
+// отличается (другой экспорт из Word/CorelDraw, другие поля страницы и
+// т.п.): кнопка "Проверить совмещение" формирует тестовый PDF с заметными
+// значениями во всех полях, а два числа "сдвиг по X/Y" (в мм) позволяют
+// один раз поправить общее смещение — оно запоминается в этом браузере по
+// хэшу файла, как и раньше с разметкой.
 
 function initCustomTemplateUpload() {
   el('customTplInput').addEventListener('change', () => {
     const file = el('customTplInput').files[0];
     if (file) handleCustomTplUpload(file);
   });
-  el('btnRemapTpl').addEventListener('click', () => {
-    if (customTplBytes) startMappingWizard(customTplBytes, customTplHash, customTplFileName);
-  });
-  el('btnExportMapping').addEventListener('click', () => {
-    if (customTplMapping) exportPdfTemplateMapping(customTplMapping);
-  });
-  el('importMappingInput').addEventListener('change', () => {
-    const file = el('importMappingInput').files[0];
-    if (file) handleImportMappingFile(file);
-    el('importMappingInput').value = '';
-  });
-  el('btnWizardSkip').addEventListener('click', skipWizardField);
-  el('btnWizardCancel').addEventListener('click', cancelWizard);
+  el('offsetXInput').addEventListener('input', readOffsetInputs);
+  el('offsetYInput').addEventListener('input', readOffsetInputs);
+  el('btnCheckAlignment').addEventListener('click', handleCheckAlignment);
+}
+
+function readOffsetInputs() {
+  customTplOffsetXFrac = mmToXFrac(el('offsetXInput').value);
+  customTplOffsetYFrac = mmToYFrac(el('offsetYInput').value);
+  if (customTplHash) {
+    saveLetterheadOffset(customTplHash, customTplFileName, customTplOffsetXFrac, customTplOffsetYFrac);
+  }
 }
 
 async function handleCustomTplUpload(file) {
@@ -112,109 +142,61 @@ async function handleCustomTplUpload(file) {
     customTplHash = hash;
     customTplFileName = file.name;
 
-    currentTemplate = { id: 'custom-pdf', title: file.name, fields: PDF_TEMPLATE_FIELDS };
-    currentFieldValues = {};
+    currentTemplate = { id: 'custom-letterhead', title: file.name, fields: TEMPLATES[0].fields };
+    applyDefaultFieldValues(currentTemplate.fields);
     renderForm();
     el('formSection').style.display = '';
     el('actionsSection').style.display = '';
     el('customTplActions').style.display = '';
 
-    const existing = loadPdfTemplateMapping(hash);
-    if (existing) {
-      customTplMapping = existing;
-      setStatus('customTplStatus', `Шаблон «${file.name}» уже был размечен ранее в этом браузере — можно сразу заполнять поля и генерировать PDF.`, 'ok');
-    } else {
-      customTplMapping = null;
-      setStatus('customTplStatus', `Новый шаблон «${file.name}» — сейчас откроется разметка (один раз).`, '');
-      await startMappingWizard(buf, hash, file.name);
-    }
+    const existing = loadLetterheadOffset(hash);
+    customTplOffsetXFrac = existing ? existing.offsetXFrac : 0;
+    customTplOffsetYFrac = existing ? existing.offsetYFrac : 0;
+    el('offsetXInput').value = xFracToMm(customTplOffsetXFrac).toFixed(1);
+    el('offsetYInput').value = yFracToMm(customTplOffsetYFrac).toFixed(1);
+
+    setStatus(
+      'customTplStatus',
+      existing
+        ? `Бланк «${file.name}» уже проверялся в этом браузере (сдвиг ${existing.offsetXFrac ? 'сохранён' : 'не потребовался'}) — можно заполнять поля и генерировать PDF, либо нажать «Проверить совмещение» ещё раз.`
+        : `Бланк «${file.name}» загружен — координаты полей той же линейки бланков применяются сразу. Нажмите «Проверить совмещение», чтобы убедиться, что всё легло ровно, прежде чем формировать документ с реальными данными.`,
+      'ok'
+    );
   } catch (err) {
     console.error(err);
     setStatus('customTplStatus', 'Не удалось прочитать PDF: ' + err.message, 'err');
   }
 }
 
-async function handleImportMappingFile(file) {
+// Тестовые значения — имя каждого ключа поля вместо реальных данных, чтобы
+// на контрольном PDF сразу было видно, какое поле куда легло. Для
+// многострочного блока сертификатов — образцовый текст (проверяет заодно и
+// перенос строк).
+function buildAlignmentTestValues() {
+  const values = {};
+  BUILTIN_PDF_FIELD_KEYS.forEach((key) => {
+    values[key] = key === 'certificates_note' ? DEFAULT_CERTIFICATES_TEXT : key;
+  });
+  return values;
+}
+
+async function handleCheckAlignment() {
+  if (!customTplBytes) {
+    setStatus('customTplStatus', 'Сначала загрузите бланк.', 'err');
+    return;
+  }
+  readOffsetInputs();
+  setStatus('customTplStatus', 'Формирую тестовый PDF для проверки совмещения...');
   try {
-    const mapping = await importPdfTemplateMappingFile(file);
-    if (customTplHash && mapping.hash !== customTplHash) {
-      setStatus('customTplStatus', 'Этот файл разметки сделан для другого PDF (хэш не совпадает) — загрузите тот же PDF-шаблон, для которого делалась разметка.', 'err');
-      return;
-    }
-    savePdfTemplateMapping(mapping);
-    customTplMapping = mapping;
-    setStatus('customTplStatus', `Разметка из файла применена для «${mapping.fileName || 'шаблона'}».`, 'ok');
+    const mapping = buildLetterheadMapping(customTplOffsetXFrac, customTplOffsetYFrac);
+    const { bytes } = await fillPdfTemplate(customTplBytes, BUILTIN_PDF_FIELD_KEYS, mapping, buildAlignmentTestValues());
+    const filename = `проверка-${(customTplFileName || 'blank').replace(/\.(pdf)$/i, '')}.pdf`;
+    downloadPdfBytes(bytes, filename);
+    setStatus('customTplStatus', `Скачан ${filename} — откройте и сверьте с образцом. Если какое-то поле съехало, подправьте «сдвиг по X/Y» (в мм) и проверьте ещё раз.`, 'ok');
   } catch (err) {
     console.error(err);
-    setStatus('customTplStatus', 'Ошибка загрузки файла разметки: ' + err.message, 'err');
+    setStatus('customTplStatus', 'Ошибка формирования тестового PDF: ' + err.message, 'err');
   }
-}
-
-/* ---------------- Мастер разметки (клик по canvas) ---------------- */
-
-let wizardState = null;
-
-async function startMappingWizard(pdfBytes, hash, fileName) {
-  const overlay = el('mappingWizard');
-  const canvas = el('wizardCanvas');
-  overlay.style.display = 'flex';
-  setStatus('customTplStatus', 'Готовлю превью страницы...');
-
-  const maxWidth = Math.max(320, Math.min(900, window.innerWidth - 120));
-  const { pageWidth, pageHeight } = await renderPdfTemplatePage(pdfBytes, canvas, maxWidth);
-
-  wizardState = {
-    fields: PDF_TEMPLATE_FIELDS,
-    index: 0,
-    mapping: { hash, fileName, pageWidth, pageHeight, fields: {} },
-  };
-
-  canvas.onclick = (e) => {
-    if (!wizardState) return;
-    const rect = canvas.getBoundingClientRect();
-    const xFrac = (e.clientX - rect.left) / rect.width;
-    const yFrac = (e.clientY - rect.top) / rect.height;
-    const field = wizardState.fields[wizardState.index];
-    wizardState.mapping.fields[field.key] = { xFrac, yFrac };
-    advanceWizard();
-  };
-
-  updateWizardPrompt();
-  setStatus('customTplStatus', 'Идёт разметка шаблона...');
-}
-
-function updateWizardPrompt() {
-  const field = wizardState.fields[wizardState.index];
-  el('wizardFieldLabel').textContent = `Куда писать: «${field.label}»?`;
-  el('wizardProgress').textContent = `${wizardState.index + 1} / ${wizardState.fields.length}`;
-}
-
-function advanceWizard() {
-  wizardState.index += 1;
-  if (wizardState.index >= wizardState.fields.length) {
-    finishWizard();
-  } else {
-    updateWizardPrompt();
-  }
-}
-
-function skipWizardField() {
-  if (!wizardState) return;
-  advanceWizard();
-}
-
-function finishWizard() {
-  savePdfTemplateMapping(wizardState.mapping);
-  customTplMapping = wizardState.mapping;
-  el('mappingWizard').style.display = 'none';
-  setStatus('customTplStatus', `Шаблон «${wizardState.mapping.fileName}» размечен и сохранён в этом браузере — можно генерировать PDF.`, 'ok');
-  wizardState = null;
-}
-
-function cancelWizard() {
-  el('mappingWizard').style.display = 'none';
-  wizardState = null;
-  setStatus('customTplStatus', 'Разметка отменена. Нажмите «Разметить заново», когда будете готовы.', 'err');
 }
 
 function setStatus(elId, text, kind) {
@@ -395,26 +377,31 @@ async function handleGenerateVsdx() {
 // (templates/TOR-15M_13-1x-original.pdf) — результат совпадает с образцом
 // один в один, дорисовываются только сами значения.
 
+// Общие для готового и "своего" бланка значения: ФИО/дата в подписи (две
+// разные точки на бланке) и номер расчёта с автоматически дописанным "№ " и
+// "/MM-ГГГГ" (закрашиваем и перерисовываем весь "№ ..." целиком — см.
+// комментарий у calc_number в builtinPdfMapping.js). Если номер не введён —
+// ничего не рисуем и не трогаем исходный "№ --/---2020" с бланка.
+function buildLetterheadValues() {
+  const formattedCalcNumber = formatCalcNumber(currentFieldValues['calc_number']);
+  return {
+    ...currentFieldValues,
+    executor_name: (currentFieldValues['executor'] || '').trim(),
+    // Дата всегда сегодняшняя на момент формирования документа — не
+    // зависит от того, заполнено ли ФИО.
+    executor_date: formatTodayDateDMY(),
+    calc_number: formattedCalcNumber ? `№ ${formattedCalcNumber}` : '',
+  };
+}
+
 async function handleGeneratePdf() {
   if (!currentTemplate) return;
   setStatus('genStatus', 'Формирую PDF...');
   try {
-    const pdfBytes = await getBuiltinPdfTemplateBytes();
-    // Напечатанный на бланке значок "№" тоже закрашивается и рисуется заново
-    // вместе с номером одной строкой (см. комментарий у calc_number в
-    // builtinPdfMapping.js) — чтобы всю надпись можно было сдвинуть левее, не
-    // уменьшая шрифт. Если номер не введён — ничего не рисуем и не трогаем
-    // исходный "№ --/---2020" с бланка.
-    const formattedCalcNumber = formatCalcNumber(currentFieldValues['calc_number']);
-    const values = {
-      ...currentFieldValues,
-      executor_name: (currentFieldValues['executor'] || '').trim(),
-      // Дата всегда сегодняшняя на момент формирования документа — не
-      // зависит от того, заполнено ли ФИО.
-      executor_date: formatTodayDateDMY(),
-      calc_number: formattedCalcNumber ? `№ ${formattedCalcNumber}` : '',
-    };
-    const { bytes, notPlaced } = await fillPdfTemplate(pdfBytes, BUILTIN_PDF_FIELD_KEYS, BUILTIN_PDF_MAPPING, values);
+    const pdfFile = currentTemplate.pdfFile || BUILTIN_LETTERHEAD_TEMPLATES[0].file;
+    const pdfBytes = await getLetterheadTemplateBytes(pdfFile);
+    const values = buildLetterheadValues();
+    const { bytes, notPlaced } = await fillPdfTemplate(pdfBytes, BUILTIN_PDF_FIELD_KEYS, buildLetterheadMapping(0, 0), values);
     const filename = buildOutputFilename('pdf');
     downloadPdfBytes(bytes, filename);
     if (notPlaced.length) {
@@ -431,30 +418,23 @@ async function handleGeneratePdf() {
   logToSheet(buildLogEntry('pdf'));
 }
 
-/* ---------------- Генерация PDF по своему шаблону (pdf-lib поверх исходного файла) ---------------- */
+/* ---------------- Генерация PDF по своему бланку (та же разметка, что и у готовых) ---------------- */
 
 async function handleGenerateCustomPdf() {
   if (!customTplBytes) {
-    setStatus('genStatus', 'Сначала загрузите свой PDF-шаблон (шаг 1).', 'err');
+    setStatus('genStatus', 'Сначала загрузите свой бланк (шаг 1).', 'err');
     return;
   }
-  if (!customTplMapping) {
-    setStatus('genStatus', 'Шаблон ещё не размечен — нажмите «Разметить заново» на шаге 1.', 'err');
-    return;
-  }
-  setStatus('genStatus', 'Формирую PDF по вашему шаблону...');
+  setStatus('genStatus', 'Формирую PDF по вашему бланку...');
   try {
-    const fieldKeys = PDF_TEMPLATE_FIELDS.map((f) => f.key);
-    const values = {
-      ...currentFieldValues,
-      calc_number: formatCalcNumber(currentFieldValues['calc_number']),
-      executor: formatExecutorCombined(currentFieldValues['executor']),
-    };
-    const { bytes, notPlaced } = await fillPdfTemplate(customTplBytes, fieldKeys, customTplMapping, values);
+    readOffsetInputs();
+    const values = buildLetterheadValues();
+    const mapping = buildLetterheadMapping(customTplOffsetXFrac, customTplOffsetYFrac);
+    const { bytes, notPlaced } = await fillPdfTemplate(customTplBytes, BUILTIN_PDF_FIELD_KEYS, mapping, values);
     const filename = buildOutputFilename('pdf');
     downloadPdfBytes(bytes, filename);
     if (notPlaced.length) {
-      setStatus('genStatus', `Скачан файл ${filename}, но для полей без разметки текст не поставлен: ${notPlaced.join(', ')} — доразметьте шаблон, если они вам нужны.`, 'err');
+      setStatus('genStatus', `Скачан файл ${filename}, но не удалось разместить: ${notPlaced.join(', ')}.`, 'err');
     } else {
       setStatus('genStatus', `Скачан файл ${filename}`, 'ok');
     }

@@ -23,6 +23,10 @@ const TEMPLATES = [
     id: 'tor-15m-13-1x',
     title: 'ТОР-15М/13-1х (LL+НН)',
     file: 'templates/TOR-15M_13-1x.vsdx',
+    // Настоящий фирменный бланк (PDF) для этой модели — используется при
+    // "Скачать PDF" (см. handleGeneratePdf в app.js). Координаты полей общие
+    // для всей линейки бланков БСИ (js/builtinPdfMapping.js).
+    pdfFile: 'templates/TOR-15M_13-1x-original.pdf',
     previewImage: 'templates/TOR-15M_13-1x-preview.png',
     fields: [
       // --- Ручной ввод (в спецификации BelTO этих данных нет) ---

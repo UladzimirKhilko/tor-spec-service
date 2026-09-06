@@ -25,8 +25,8 @@
   <section class="card">
     <h2><span class="step-num">1</span>Шаблон</h2>
     <div class="tpl-mode-row">
-      <label class="radio-label"><input type="radio" name="tplMode" id="tplModeBuiltin" checked /> Готовый шаблон из списка</label>
-      <label class="radio-label"><input type="radio" name="tplMode" id="tplModeCustom" /> Свой PDF-шаблон (загрузить)</label>
+      <label class="radio-label"><input type="radio" name="tplMode" id="tplModeBuiltin" checked /> Готовый бланк из списка</label>
+      <label class="radio-label"><input type="radio" name="tplMode" id="tplModeCustom" /> Свой бланк (другая модель, тот же вид)</label>
     </div>
 
     <div id="builtinTplBlock">
@@ -36,15 +36,16 @@
 
     <div id="customTplBlock" style="display:none;">
       <input type="file" id="customTplInput" accept=".pdf" />
-      <div class="hint">Загрузите свой PDF-шаблон (например экспорт из Visio) — при первой загрузке нужно один раз указать мышкой, куда писать каждое значение. Дальше это же файл распознаётся автоматически.</div>
+      <div class="hint">Загрузите PDF бланка для другой модели (тот же фирменный бланк БСИ, просто другая картинка/марка) — координаты полей общие для всей линейки, разметка не нужна. Перед тем как формировать документ с реальными данными, нажмите «Проверить совмещение».</div>
       <div class="status-line" id="customTplStatus"></div>
-      <div id="customTplActions" style="display:none; margin-top:10px;" class="actions-row">
-        <button id="btnRemapTpl" class="secondary">Разметить заново</button>
-        <button id="btnExportMapping" class="secondary">Скачать разметку</button>
-        <label class="secondary file-btn-label">
-          Загрузить разметку
-          <input type="file" id="importMappingInput" accept=".json" style="display:none;" />
-        </label>
+      <div id="customTplActions" style="display:none; margin-top:10px;">
+        <div class="offset-row">
+          <label>Сдвиг по X, мм <input type="number" id="offsetXInput" value="0" step="0.5" /></label>
+          <label>Сдвиг по Y, мм <input type="number" id="offsetYInput" value="0" step="0.5" /></label>
+        </div>
+        <div class="actions-row">
+          <button id="btnCheckAlignment" class="secondary">Проверить совмещение (тестовый PDF)</button>
+        </div>
       </div>
     </div>
   </section>
@@ -80,7 +81,7 @@
       <button id="btnPdf" class="secondary">Скачать PDF</button>
     </div>
     <div class="actions-row" id="customActions" style="display:none;">
-      <button id="btnCustomPdf">Скачать PDF (по своему шаблону)</button>
+      <button id="btnCustomPdf">Скачать PDF (по своему бланку)</button>
     </div>
     <div class="status-line" id="genStatus"></div>
     <div class="hint" style="margin-top:8px; color:#6b7280; font-size:12px;">
@@ -91,37 +92,17 @@
 
 </main>
 
-<!-- ============ Мастер разметки своего PDF-шаблона (модальный оверлей) ============ -->
-<div id="mappingWizard" class="wizard-overlay" style="display:none;">
-  <div class="wizard-box">
-    <div class="wizard-header">
-      <div>
-        <div id="wizardFieldLabel" class="wizard-field-label"></div>
-        <div class="hint">Кликните на странице ниже, куда должно попасть это значение. Если такого поля в вашем шаблоне нет — нажмите «Пропустить».</div>
-      </div>
-      <div id="wizardProgress" class="wizard-progress"></div>
-    </div>
-    <div class="wizard-canvas-wrap">
-      <canvas id="wizardCanvas"></canvas>
-    </div>
-    <div class="wizard-actions actions-row">
-      <button id="btnWizardSkip" class="secondary">Пропустить (нет такого поля)</button>
-      <button id="btnWizardCancel" class="secondary">Отмена разметки</button>
-    </div>
-  </div>
-</div>
-
 <script src="vendor/fontkit.umd.min.js"></script>
 <script src="vendor/pdf-lib.min.js"></script>
-<script src="js/config.js?v=17"></script>
-<script src="js/units.js?v=17"></script>
-<script src="js/fieldMap.js?v=17"></script>
-<script src="js/beltoParser.js?v=17"></script>
-<script src="js/extract.js?v=17"></script>
-<script src="js/vsdxBuilder.js?v=17"></script>
-<script src="js/pdfTemplate.js?v=17"></script>
-<script src="js/builtinPdfMapping.js?v=17"></script>
-<script src="js/sheetsLog.js?v=17"></script>
-<script src="js/app.js?v=17"></script>
+<script src="js/config.js?v=18"></script>
+<script src="js/units.js?v=18"></script>
+<script src="js/fieldMap.js?v=18"></script>
+<script src="js/beltoParser.js?v=18"></script>
+<script src="js/extract.js?v=18"></script>
+<script src="js/vsdxBuilder.js?v=18"></script>
+<script src="js/pdfTemplate.js?v=18"></script>
+<script src="js/builtinPdfMapping.js?v=18"></script>
+<script src="js/sheetsLog.js?v=18"></script>
+<script src="js/app.js?v=18"></script>
 </body>
 </html>

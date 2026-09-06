@@ -1,166 +1,54 @@
 /*
  * pdfTemplate.js
- * Заполнение ПРОИЗВОЛЬНОГО PDF-шаблона (загруженного самим инженером), без
- * какой-либо заранее подготовленной "базы" шаблонов.
+ * Заполнение бланка (pdf-lib поверх исходного PDF-файла) — общий механизм
+ * и для "готовых" бланков (js/builtinPdfMapping.js, координаты сверены
+ * заранее), и для "своего бланка" (сотрудник сам загружает PDF того же вида
+ * — другая картинка/марка, но та же табличная разметка).
  *
- * Идея: обычный PDF, экспортированный из Visio/Word/AutoCAD и т.п., не
- * содержит настоящих полей формы (AcroForm) — это просто плоская страница.
- * Поэтому программа не может сама угадать, куда именно писать каждое
- * значение (у разных инженеров вёрстка отличается). Решение — мастер
- * разметки: при первой загрузке конкретного файла инженер один раз кликает
- * мышкой по странице, куда должно попасть каждое значение. Разметка
- * (координаты клика в долях ширины/высоты страницы — не зависят от масштаба
- * показа) сохраняется в localStorage браузера, привязанная к SHA-256 хэшу
- * самого файла шаблона — при повторной загрузке того же файла разметка
- * подставляется автоматически. Разметку также можно скачать/загрузить как
- * небольшой .json-файл, чтобы передать коллеге, размечавшему тот же шаблон.
- *
- * Заполнение — pdf-lib дорисовывает текст поверх исходной страницы (шаблон
- * остаётся как есть, со всеми картинками/диаграммами/фирменным бланком),
- * итог скачивается как обычный PDF.
+ * Раньше здесь ещё был мастер разметки (клик мышкой по каждому из ~26 полей)
+ * — для случая, когда программа не может угадать, куда писать значения на
+ * произвольном PDF. От него отказались: у линейки бланков БСИ всегда одна и
+ * та же табличная разметка (см. комментарий в builtinPdfMapping.js), поэтому
+ * координаты, снятые один раз с образца, годятся для любого бланка этой
+ * линейки без разметки мышкой — см. buildLetterheadMapping и режим "Свой
+ * бланк" в app.js (там же — необязательная поправка смещения по X/Y и
+ * тестовый PDF "Проверить совмещение", на случай если у нового файла всё же
+ * есть небольшой сдвиг вёрстки).
  */
-
-// Единый список полей — тот же физический набор данных и та же логика
-// автозаполнения/конвертации единиц, что и во встроенном vsdx-шаблоне
-// (js/fieldMap.js, TEMPLATES[0].fields) — только без shapeIds, потому что
-// для PDF-шаблона место назначения — не "фигура по ID", а точка на
-// странице, которую инженер указывает сам в мастере разметки.
-const PDF_TEMPLATE_FIELDS = [
-  { key: 'customer',        label: 'Заказчик',                         group: 'manual', notes: '' },
-  { key: 'site',             label: 'Место установки',                  group: 'manual', notes: '' },
-  { key: 'contact_person',   label: 'Фамилия И.О. (контактное лицо)',   group: 'manual', notes: '' },
-  { key: 'contact_info',     label: 'Телефон, факс, E-mail',            group: 'manual', notes: '' },
-  { key: 'calc_number',      label: 'Номер расчёта',                    group: 'manual', notes: 'Введите только номер, например 19234 — месяц и год подставятся автоматически по сегодняшней дате' },
-  { key: 'price_unit',       label: 'Цена без НДС за единицу, руб',     group: 'manual', notes: '' },
-  { key: 'price_total',      label: 'ИТОГО цена без НДС, руб',          group: 'manual', notes: '' },
-  { key: 'executor',         label: 'Расчёт выполнил (ФИО)',            group: 'manual', notes: 'Дата проставляется автоматически текущим числом (дд/мм/гггг) — вводить не нужно' },
-
-  { key: 'model',
-    label: 'Марка теплообменника',
-    group: 'auto',
-    compute: (v) => (v.plates_count && v.channel_layout)
-      ? `ТОР-15М/13-${Math.round(parseFloat(v.plates_count))}-1х(${v.channel_layout})`
-      : null,
-    sourceKeys: ['model'], sourceUnit: null, convert: null,
-    notes: 'Собирается автоматически — проверьте совпадение с реальной маркой' },
-
-  { key: 'heat_load', label: 'Тепловая нагрузка, Гкал/ч', group: 'auto',
-    sourceKeys: ['heat_power'], sourceUnit: 'Гкал/ч', convert: null, notes: '' },
-
-  { key: 'temp_graph', label: 'Температурный график сетевой воды, °C', group: 'auto',
-    sourceKeys: ['temp_graph'], sourceUnit: '°C', convert: null,
-    notes: 'Формат вида 95/70 — вход/выход' },
-
-  { key: 'temp_hot', label: 'Температура вход-выход, греющий контур, °C', group: 'auto',
-    sourceKeys: ['temp_in_hot_out_hot'], sourceUnit: '°C', convert: null, notes: '' },
-
-  { key: 'temp_cold', label: 'Температура вход-выход, нагреваемый контур, °C', group: 'auto',
-    sourceKeys: ['temp_in_cold_out_cold'], sourceUnit: '°C', convert: null, notes: '' },
-
-  { key: 'flow_hot', label: 'Расход, греющий контур, т/ч', group: 'auto',
-    sourceKeys: ['flow_hot'], sourceUnit: 'т/ч', convert: null, notes: '' },
-
-  { key: 'flow_cold', label: 'Расход, нагреваемый контур, т/ч', group: 'auto',
-    sourceKeys: ['flow_cold'], sourceUnit: 'т/ч', convert: null, notes: '' },
-
-  { key: 'dp_hot', label: 'Потери давления, греющий контур, кг/см2', group: 'auto',
-    sourceKeys: ['dp_hot'], sourceUnit: 'кПа', convert: 'kpaToKgfCm2', notes: '' },
-
-  { key: 'dp_cold', label: 'Потери давления, нагреваемый контур, кг/см2', group: 'auto',
-    sourceKeys: ['dp_cold'], sourceUnit: 'кПа', convert: 'kpaToKgfCm2', notes: '' },
-
-  { key: 'plates_count', label: 'Количество пластин, шт', group: 'auto',
-    sourceKeys: ['plates_count'], sourceUnit: 'шт', convert: null, notes: '' },
-
-  { key: 'passes_count', label: 'Число ходов', group: 'auto',
-    sourceKeys: ['passes_count'], sourceUnit: null, convert: null, notes: '' },
-
-  { key: 'heat_transfer_coef', label: 'Коэффициент теплопередачи, Вт/м2°C', group: 'auto',
-    sourceKeys: ['heat_transfer_coef_combined', 'heat_transfer_coef_actual'], sourceUnit: 'Вт/м2°K', convert: null,
-    notes: 'Формат: фактический/необходимый' },
-
-  { key: 'surface_margin', label: 'Запас по поверхности, %', group: 'auto',
-    sourceKeys: ['surface_margin_pct', 'surface_margin'], sourceUnit: '%', convert: null, notes: '' },
-
-  { key: 'heat_surface', label: 'Поверхность теплообмена, м2', group: 'auto',
-    sourceKeys: ['heat_surface'], sourceUnit: 'м2', convert: null, notes: '' },
-
-  { key: 'dn', label: 'Условный диаметр DN, мм', group: 'auto',
-    sourceKeys: ['dn'], sourceUnit: 'мм', convert: null, notes: '' },
-
-  { key: 'mass', label: 'Масса, кг', group: 'auto',
-    sourceKeys: ['mass_filled', 'mass_empty'], sourceUnit: 'кг', convert: null, notes: '' },
-
-  { key: 'dim_l', label: 'L, мм (длина по патрубкам)', group: 'manual', notes: '' },
-  { key: 'dim_a', label: 'A, мм', group: 'manual', notes: '' },
-];
 
 async function sha256Hex(buf) {
   const hash = await crypto.subtle.digest('SHA-256', buf);
   return Array.from(new Uint8Array(hash)).map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-function pdfTplMapStorageKey(hash) {
-  return `pdfTplMap:${hash}`;
+// Поправка смещения (offsetXFrac/offsetYFrac), подобранная для конкретного
+// загруженного файла "своего бланка" — привязана к SHA-256 хэшу файла, чтобы
+// при повторной загрузке того же файла ничего не нужно было подбирать заново.
+// Само по себе это НЕ разметка полей (в отличие от старого мастера) — только
+// два числа общей поправки, тот случай, когда координаты образца чуть-чуть
+// не совпадают с новым файлом.
+function letterheadOffsetStorageKey(hash) {
+  return `letterheadOffset:${hash}`;
 }
 
-function loadPdfTemplateMapping(hash) {
+function loadLetterheadOffset(hash) {
   try {
-    const raw = localStorage.getItem(pdfTplMapStorageKey(hash));
+    const raw = localStorage.getItem(letterheadOffsetStorageKey(hash));
     return raw ? JSON.parse(raw) : null;
   } catch (e) {
-    console.warn('Не удалось прочитать разметку шаблона из localStorage', e);
+    console.warn('Не удалось прочитать сохранённый сдвиг из localStorage', e);
     return null;
   }
 }
 
-function savePdfTemplateMapping(mapping) {
+function saveLetterheadOffset(hash, fileName, offsetXFrac, offsetYFrac) {
   try {
-    localStorage.setItem(pdfTplMapStorageKey(mapping.hash), JSON.stringify(mapping));
+    localStorage.setItem(letterheadOffsetStorageKey(hash), JSON.stringify({
+      hash, fileName, offsetXFrac, offsetYFrac, savedAt: new Date().toISOString(),
+    }));
   } catch (e) {
-    console.warn('Не удалось сохранить разметку шаблона в localStorage (место кончилось?)', e);
+    console.warn('Не удалось сохранить сдвиг в localStorage (место кончилось?)', e);
   }
-}
-
-function exportPdfTemplateMapping(mapping) {
-  const blob = new Blob([JSON.stringify(mapping, null, 2)], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `razmetka-${(mapping.fileName || 'shablon').replace(/[^\w.-]+/g, '_')}-${mapping.hash.slice(0, 8)}.json`;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 5000);
-}
-
-async function importPdfTemplateMappingFile(file) {
-  const text = await file.text();
-  let mapping;
-  try {
-    mapping = JSON.parse(text);
-  } catch (e) {
-    throw new Error('Файл разметки повреждён или не в формате JSON');
-  }
-  if (!mapping || typeof mapping !== 'object' || !mapping.hash || !mapping.fields) {
-    throw new Error('Это не похоже на файл разметки шаблона (нет hash/fields)');
-  }
-  return mapping;
-}
-
-/* ---------------- Рендер страницы шаблона в canvas для мастера разметки ---------------- */
-
-async function renderPdfTemplatePage(pdfBytes, canvas, maxWidth) {
-  const pdf = await pdfjsLib.getDocument({ data: pdfBytes.slice(0) }).promise;
-  const page = await pdf.getPage(1);
-  const baseViewport = page.getViewport({ scale: 1 });
-  const scale = Math.min(2.5, maxWidth / baseViewport.width);
-  const viewport = page.getViewport({ scale });
-  canvas.width = viewport.width;
-  canvas.height = viewport.height;
-  const ctx = canvas.getContext('2d');
-  await page.render({ canvasContext: ctx, viewport }).promise;
-  return { pageWidth: baseViewport.width, pageHeight: baseViewport.height, renderScale: scale };
 }
 
 /* ---------------- Заполнение шаблона значениями и сохранение готового PDF ---------------- */

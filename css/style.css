@@ -203,63 +203,19 @@ details summary { cursor: pointer; color: var(--accent-dark); font-size: 13px; }
   cursor: pointer;
 }
 
-/* Мастер разметки — модальный оверлей на весь экран */
-.wizard-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(15, 23, 42, 0.65);
-  z-index: 1000;
+.offset-row {
   display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 20px;
-}
-.wizard-box {
-  background: #fff;
-  border-radius: 10px;
-  max-width: 96vw;
-  max-height: 94vh;
-  width: 960px;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  box-shadow: 0 10px 40px rgba(0,0,0,0.35);
-}
-.wizard-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 16px;
-  padding: 16px 20px;
-  border-bottom: 1px solid var(--border);
-}
-.wizard-field-label {
-  font-size: 16px;
-  font-weight: 700;
-  color: var(--accent-dark);
+  gap: 18px;
+  flex-wrap: wrap;
   margin-bottom: 4px;
 }
-.wizard-progress {
-  font-size: 13px;
-  color: var(--muted);
-  white-space: nowrap;
-  padding-top: 2px;
-}
-.wizard-canvas-wrap {
-  overflow: auto;
-  padding: 16px 20px;
-  flex: 1;
+.offset-row label {
   display: flex;
-  justify-content: center;
-  background: var(--bg);
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text);
 }
-.wizard-canvas-wrap canvas {
-  cursor: crosshair;
-  box-shadow: 0 1px 6px rgba(0,0,0,0.2);
-  background: #fff;
-}
-.wizard-actions {
-  padding: 14px 20px;
-  border-top: 1px solid var(--border);
-  justify-content: flex-end;
+.offset-row input[type=number] {
+  width: 80px;
 }
