@@ -384,6 +384,11 @@ async function handleGenerateVsdx() {
 // ничего не рисуем и не трогаем исходный "№ --/---2020" с бланка.
 function buildLetterheadValues() {
   const formattedCalcNumber = formatCalcNumber(currentFieldValues['calc_number']);
+  // DN (условный диаметр) в бланке напечатан у всех 4 патрубков сразу
+  // (Т1/Т2/В1/Т3) — одно и то же значение дублируется в 4 "синтетических"
+  // поля dn_1..dn_4 (см. LETTERHEAD_FIELDS в builtinPdfMapping.js), как и
+  // shapeIds:[7,42,43,45] делают то же самое для .vsdx-варианта.
+  const dnValue = currentFieldValues['dn'];
   return {
     ...currentFieldValues,
     executor_name: (currentFieldValues['executor'] || '').trim(),
@@ -391,6 +396,7 @@ function buildLetterheadValues() {
     // зависит от того, заполнено ли ФИО.
     executor_date: formatTodayDateDMY(),
     calc_number: formattedCalcNumber ? `№ ${formattedCalcNumber}` : '',
+    dn_1: dnValue, dn_2: dnValue, dn_3: dnValue, dn_4: dnValue,
   };
 }
 

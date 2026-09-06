@@ -56,8 +56,13 @@ const LETTERHEAD_FIELDS = {
   contact_person:  { xFrac: 0.30265, yFrac: 0.16958 },
   contact_info:    { xFrac: 0.30265, yFrac: 0.18645 },
 
-  heat_load:       { xFrac: 0.39647, yFrac: 0.26221 },
-  temp_graph:      { xFrac: 0.39647, yFrac: 0.28746 },
+  // Значения в таблицах "Исходные данные"/"Расчёт" — по просьбе пользователя
+  // размещены по центру своей ячейки (а не от левого края, как раньше).
+  // centerXFrac снят с реальных границ ячеек (pdfplumber: page.rects) —
+  // widthFrac ячейки общая для всей строки (одна ячейка на значение) или
+  // разбита на "греющая среда"/"нагреваемая среда" (см. ниже).
+  heat_load:       { xFrac: 0.39647, yFrac: 0.26221, align: 'center', centerXFrac: 0.50042 },
+  temp_graph:      { xFrac: 0.39647, yFrac: 0.28746, align: 'center', centerXFrac: 0.50042 },
   // L и A — узкие ячейки в правом блоке "Габаритные размеры", значения в
   // них по просьбе пользователя пишутся по центру ячейки, а не от края.
   dim_l:           { xFrac: 0.74552, yFrac: 0.27908, align: 'center', centerXFrac: 0.84599 },
@@ -69,30 +74,55 @@ const LETTERHEAD_FIELDS = {
   },
   mass:            { xFrac: 0.74552, yFrac: 0.29596, align: 'center', centerXFrac: 0.84599 },
 
-  temp_hot:        { xFrac: 0.39647, yFrac: 0.32959 },
-  temp_cold:       { xFrac: 0.50727, yFrac: 0.32959 },
-  flow_hot:        { xFrac: 0.39647, yFrac: 0.34641 },
-  flow_cold:       { xFrac: 0.50727, yFrac: 0.34641 },
-  dp_hot:          { xFrac: 0.39647, yFrac: 0.36328 },
-  dp_cold:         { xFrac: 0.50727, yFrac: 0.36328 },
-  plates_count:    { xFrac: 0.39647, yFrac: 0.38010 },
+  // Строки с двумя значениями в одной строке (греющий/нагреваемый контур) —
+  // у ячейки "Греющая среда" центр 0.42887, у "Нагреваемая среда" — 0.57185.
+  temp_hot:        { xFrac: 0.39647, yFrac: 0.32959, align: 'center', centerXFrac: 0.42887 },
+  temp_cold:       { xFrac: 0.50727, yFrac: 0.32959, align: 'center', centerXFrac: 0.57185 },
+  flow_hot:        { xFrac: 0.39647, yFrac: 0.34641, align: 'center', centerXFrac: 0.42887 },
+  flow_cold:       { xFrac: 0.50727, yFrac: 0.34641, align: 'center', centerXFrac: 0.57185 },
+  dp_hot:          { xFrac: 0.39647, yFrac: 0.36328, align: 'center', centerXFrac: 0.42887 },
+  dp_cold:         { xFrac: 0.50727, yFrac: 0.36328, align: 'center', centerXFrac: 0.57185 },
+  plates_count:    { xFrac: 0.39647, yFrac: 0.38010, align: 'center', centerXFrac: 0.50042 },
 
   passes_count: {
-    xFrac: 0.39647, yFrac: 0.39691,
+    xFrac: 0.39647, yFrac: 0.39691, align: 'center', centerXFrac: 0.50042,
     redact: { xFrac: 0.39142, yFrac: 0.39441, wFrac: 0.25036, hFrac: 0.01450 },
   },
 
-  heat_transfer_coef: { xFrac: 0.39647, yFrac: 0.41378 },
-  surface_margin:     { xFrac: 0.39647, yFrac: 0.43066 },
-  heat_surface:       { xFrac: 0.39647, yFrac: 0.44747 },
+  heat_transfer_coef: { xFrac: 0.39647, yFrac: 0.41378, align: 'center', centerXFrac: 0.50042 },
+  surface_margin:     { xFrac: 0.39647, yFrac: 0.43066, align: 'center', centerXFrac: 0.50042 },
+  heat_surface:       { xFrac: 0.39647, yFrac: 0.44747, align: 'center', centerXFrac: 0.50042 },
 
   model: {
-    xFrac: 0.30265, yFrac: 0.46429,
+    xFrac: 0.30265, yFrac: 0.46429, align: 'center', centerXFrac: 0.47066,
     redact: { xFrac: 0.29760, yFrac: 0.46179, wFrac: 0.34418, hFrac: 0.01450 },
   },
 
-  price_unit:  { xFrac: 0.39647, yFrac: 0.48116 },
-  price_total: { xFrac: 0.39647, yFrac: 0.49804 },
+  price_unit:  { xFrac: 0.39647, yFrac: 0.48116, align: 'center', centerXFrac: 0.50042 },
+  price_total: { xFrac: 0.39647, yFrac: 0.49804, align: 'center', centerXFrac: 0.50042 },
+
+  // Условный диаметр DN, мм — строка "DN, мм" в блоке "Габаритные размеры",
+  // 4 патрубка (Т1/Т2/В1/Т3), в образце везде напечатано "50" — редактируем
+  // (закрашиваем) каждую ячейку отдельно и пишем туда одно и то же значение
+  // (см. dn auto-поле в fieldMap.js и buildLetterheadValues в app.js,
+  // которая копирует values.dn в dn_1..dn_4). Координаты ячеек сняты с
+  // pdfplumber (page.rects) для строки "DN, мм" в оригинале бланка.
+  dn_1: {
+    xFrac: 0.76610, yFrac: 0.24537, align: 'center', centerXFrac: 0.76610,
+    redact: { xFrac: 0.73962, yFrac: 0.24290, wFrac: 0.05310, hFrac: 0.01445 },
+  },
+  dn_2: {
+    xFrac: 0.81966, yFrac: 0.24537, align: 'center', centerXFrac: 0.81966,
+    redact: { xFrac: 0.79440, yFrac: 0.24290, wFrac: 0.05075, hFrac: 0.01445 },
+  },
+  dn_3: {
+    xFrac: 0.87225, yFrac: 0.24537, align: 'center', centerXFrac: 0.87225,
+    redact: { xFrac: 0.84685, yFrac: 0.24290, wFrac: 0.05075, hFrac: 0.01445 },
+  },
+  dn_4: {
+    xFrac: 0.92584, yFrac: 0.24537, align: 'center', centerXFrac: 0.92584,
+    redact: { xFrac: 0.89923, yFrac: 0.24290, wFrac: 0.05313, hFrac: 0.01445 },
+  },
 
   calc_number: {
     // Между напечатанным "№" и краем листа было слишком мало места для
