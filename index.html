@@ -91,70 +91,6 @@
 
 </main>
 
-<!-- ============ Печатный лист (скрыт, используется только для PDF через печать) ============ -->
-<div id="printSheet">
-  <div class="sheet" id="sheetTor15m13">
-    <div class="company-header">
-      <div class="company-name">ОАО "БПА БЕЛСТРОЙИНДУСТРИЯ"</div>
-      <div class="company-meta">
-        Республика Беларусь, 220075, г. Минск, ул. Селицкого, 17а<br/>
-        www.bpabsi.by · тел. (017)364-74-06, (017)364-82-79 · bsi_teso@bpabsi.by<br/>
-        № <span data-print="calc_number">--/---2026</span>
-      </div>
-    </div>
-    <div class="title">РАСЧЁТ ТЕПЛООБМЕННИКА ТОР-15М/13</div>
-
-    <table>
-      <tr><td style="width:22%"><b>Заказчик</b></td><td colspan="3" data-print="customer"></td></tr>
-      <tr><td><b>Место установки</b></td><td colspan="3" data-print="site"></td></tr>
-      <tr><td><b>Контактное лицо</b></td><td data-print="contact_person"></td>
-          <td><b>Телефон / E-mail</b></td><td data-print="contact_info"></td></tr>
-    </table>
-
-    <table>
-      <tr>
-        <th style="width:26%">Наименование</th>
-        <th style="width:10%">Ед. изм</th>
-        <th style="width:32%">Греющая среда</th>
-        <th style="width:32%">Нагреваемая среда</th>
-      </tr>
-      <tr class="section-row"><td colspan="4">ИСХОДНЫЕ ДАННЫЕ</td></tr>
-      <tr><td>Тепловая нагрузка</td><td>Гкал/ч</td><td colspan="2" data-print="heat_load"></td></tr>
-      <tr><td>Температурный график сетевой воды</td><td>°C</td><td colspan="2" data-print="temp_graph"></td></tr>
-      <tr class="section-row"><td colspan="4">РАСЧЁТ</td></tr>
-      <tr><td>Температура, вход-выход</td><td>°C</td><td data-print="temp_hot"></td><td data-print="temp_cold"></td></tr>
-      <tr><td>Расход</td><td>т/ч</td><td data-print="flow_hot"></td><td data-print="flow_cold"></td></tr>
-      <tr><td>Потери давления</td><td>кг/см2</td><td data-print="dp_hot"></td><td data-print="dp_cold"></td></tr>
-      <tr><td>Количество пластин</td><td>шт</td><td colspan="2" data-print="plates_count"></td></tr>
-      <tr><td>Число ходов</td><td>ход</td><td colspan="2" data-print="passes_count"></td></tr>
-      <tr><td>Коэффициент теплопередачи</td><td>Вт/м2°C</td><td colspan="2" data-print="heat_transfer_coef"></td></tr>
-      <tr><td>Запас по поверхности</td><td>%</td><td colspan="2" data-print="surface_margin"></td></tr>
-      <tr><td>Поверхность теплообмена</td><td>м2</td><td colspan="2" data-print="heat_surface"></td></tr>
-      <tr><td><b>Марка теплообменника</b></td><td>—</td><td colspan="2" data-print="model"></td></tr>
-      <tr><td>Цена без НДС за единицу</td><td>руб</td><td colspan="2" data-print="price_unit"></td></tr>
-      <tr><td><b>ИТОГО цена без НДС</b></td><td>руб</td><td colspan="2" data-print="price_total"></td></tr>
-    </table>
-
-    <table>
-      <tr><th colspan="2">Габаритные размеры</th></tr>
-      <tr><td>DN, мм</td><td data-print="dn"></td></tr>
-      <tr><td>L, мм</td><td data-print="dim_l"></td></tr>
-      <tr><td>Масса, кг</td><td data-print="mass"></td></tr>
-    </table>
-
-    <div class="diagram-title">Общий вид теплообменника</div>
-    <div class="diagram-wrap">
-      <img src="assets/tor-15m-13-1x-diagram.png" alt="Общий вид ТОР-15М/13-1х" />
-    </div>
-
-    <div class="footer-note">ВНИМАНИЕ: изделие должно эксплуатироваться строго в соответствии с исходными и расчётными параметрами!</div>
-
-    <div class="signature-row">
-      <div>Расчёт выполнил: <span data-print="executor"></span></div>
-    </div>
-  </div>
-</div>
-
 <!-- ============ Мастер разметки своего PDF-шаблона (модальный оверлей) ============ -->
 <div id="mappingWizard" class="wizard-overlay" style="display:none;">
   <div class="wizard-box">
@@ -177,16 +113,15 @@
 
 <script src="vendor/fontkit.umd.min.js"></script>
 <script src="vendor/pdf-lib.min.js"></script>
-<script src="vendor/html2canvas.min.js"></script>
-<script src="vendor/jspdf.umd.min.js"></script>
-<script src="js/config.js?v=9"></script>
-<script src="js/units.js?v=9"></script>
-<script src="js/fieldMap.js?v=9"></script>
-<script src="js/beltoParser.js?v=9"></script>
-<script src="js/extract.js?v=9"></script>
-<script src="js/vsdxBuilder.js?v=9"></script>
-<script src="js/pdfTemplate.js?v=9"></script>
-<script src="js/sheetsLog.js?v=9"></script>
-<script src="js/app.js?v=9"></script>
+<script src="js/config.js?v=13"></script>
+<script src="js/units.js?v=13"></script>
+<script src="js/fieldMap.js?v=13"></script>
+<script src="js/beltoParser.js?v=13"></script>
+<script src="js/extract.js?v=13"></script>
+<script src="js/vsdxBuilder.js?v=13"></script>
+<script src="js/pdfTemplate.js?v=13"></script>
+<script src="js/builtinPdfMapping.js?v=13"></script>
+<script src="js/sheetsLog.js?v=13"></script>
+<script src="js/app.js?v=13"></script>
 </body>
 </html>

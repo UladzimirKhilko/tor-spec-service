@@ -30,7 +30,7 @@ const PDF_TEMPLATE_FIELDS = [
   { key: 'site',             label: 'Место установки',                  group: 'manual', notes: '' },
   { key: 'contact_person',   label: 'Фамилия И.О. (контактное лицо)',   group: 'manual', notes: '' },
   { key: 'contact_info',     label: 'Телефон, факс, E-mail',            group: 'manual', notes: '' },
-  { key: 'calc_number',      label: 'Номер расчёта / дата',             group: 'manual', notes: '' },
+  { key: 'calc_number',      label: 'Номер расчёта',                    group: 'manual', notes: 'Введите только номер, например 19234 — месяц и год подставятся автоматически по сегодняшней дате' },
   { key: 'price_unit',       label: 'Цена без НДС за единицу, руб',     group: 'manual', notes: '' },
   { key: 'price_total',      label: 'ИТОГО цена без НДС, руб',          group: 'manual', notes: '' },
   { key: 'executor',         label: 'Расчёт выполнил (ФИО, дата)',      group: 'manual', notes: '' },
@@ -92,6 +92,7 @@ const PDF_TEMPLATE_FIELDS = [
     sourceKeys: ['mass_filled', 'mass_empty'], sourceUnit: 'кг', convert: null, notes: '' },
 
   { key: 'dim_l', label: 'L, мм (длина по патрубкам)', group: 'manual', notes: '' },
+  { key: 'dim_a', label: 'A, мм', group: 'manual', notes: '' },
 ];
 
 async function sha256Hex(buf) {
@@ -175,12 +176,40 @@ async function getDejaVuFontBytes() {
 }
 
 /**
- * @param {ArrayBuffer} pdfBytes - исходный (пустой) PDF-шаблон
- * @param {object} mapping - { hash, pageWidth, pageHeight, fields: { key: { xFrac, yFrac } } }
+ * @param {ArrayBuffer} pdfBytes - исходный PDF-шаблон (пустой, либо с уже
+ *   напечатанным "образцовым" содержимым — тогда для конкретных полей в
+ *   mapping.fields[key].redact можно задать прямоугольник, который перед
+ *   вписыванием текста будет закрашен белым (например поверх заводского
+ *   плейсхолдера вроде "ТОР-15М/13-1х(LL+НН)" или "--/---2020").
+ * @param {string[]} fieldKeys - какие ключи вообще пытаемся разместить (нужно
+ *   отдельно от mapping.fields, чтобы корректно посчитать notPlaced — поля,
+ *   для которых есть значение, но нет позиции в разметке)
+ * @param {object} mapping - { hash, pageWidth, pageHeight, fields: { key: { xFrac, yFrac, redact? } } }
  * @param {object} values - { key: string } - что писать (уже отформатированные строки)
- * @returns {Promise<Uint8Array>} готовый PDF
+ * @returns {Promise<{bytes: Uint8Array, notPlaced: string[]}>} готовый PDF
  */
-async function fillPdfTemplate(pdfBytes, mapping, values) {
+// Разбивает одну строку на несколько так, чтобы каждая укладывалась в
+// maxWidth (в pt) при данном шрифте/размере — обычный word-wrap по словам.
+function wrapTextToWidth(font, text, fontSize, maxWidth) {
+  if (!text) return [''];
+  const words = text.split(/\s+/).filter(Boolean);
+  if (!words.length) return [''];
+  const lines = [];
+  let cur = '';
+  words.forEach((w) => {
+    const test = cur ? `${cur} ${w}` : w;
+    if (!cur || font.widthOfTextAtSize(test, fontSize) <= maxWidth) {
+      cur = test;
+    } else {
+      lines.push(cur);
+      cur = w;
+    }
+  });
+  if (cur) lines.push(cur);
+  return lines;
+}
+
+async function fillPdfTemplate(pdfBytes, fieldKeys, mapping, values) {
   const { PDFDocument, rgb } = PDFLib;
   const pdfDoc = await PDFDocument.load(pdfBytes);
   pdfDoc.registerFontkit(fontkit);
@@ -191,18 +220,65 @@ async function fillPdfTemplate(pdfBytes, mapping, values) {
 
   const FONT_SIZE = 9;
   const notPlaced = [];
-  PDF_TEMPLATE_FIELDS.forEach((f) => {
-    const pos = mapping.fields[f.key];
-    const val = values[f.key];
+  fieldKeys.forEach((key) => {
+    const pos = mapping.fields[key];
+    const val = values[key];
     if (val === undefined || val === null || val === '') return;
-    if (!pos) { notPlaced.push(f.key); return; }
+    if (!pos) { notPlaced.push(key); return; }
+
+    if (pos.redact) {
+      // Закрываем белым прямоугольником заводской плейсхолдер (например
+      // готовое "образцовое" значение из шаблона), прежде чем писать своё.
+      const r = pos.redact;
+      const rx = r.xFrac * pageW;
+      const rw = r.wFrac * pageW;
+      const rh = r.hFrac * pageH;
+      const ryTop = r.yFrac * pageH;
+      const ry = pageH - ryTop - rh;
+      page.drawRectangle({ x: rx, y: ry, width: rw, height: rh, color: rgb(1, 1, 1) });
+    }
+
+    const text = String(val);
+
+    if (pos.multiline) {
+      // Многострочное поле (например блок с сертификатами): пользователь
+      // сам решает, где переносить строку (Enter в textarea) — эти разрывы
+      // сохраняем как есть, а внутри каждой такой строки ещё и переносим по
+      // словам, если она не влезает в ширину ячейки maxWidthFrac.
+      const fontSize = pos.fontSize || FONT_SIZE;
+      const maxWidth = pos.maxWidthFrac * pageW;
+      const lineHeight = pos.lineHeightFrac ? pos.lineHeightFrac * pageH : fontSize * 1.2;
+      const x = pos.xFrac * pageW;
+      let curYTop = pos.yFrac * pageH;
+      text.split('\n').forEach((rawLine) => {
+        wrapTextToWidth(font, rawLine.trim(), fontSize, maxWidth).forEach((ln) => {
+          if (ln) {
+            const y = pageH - curYTop - fontSize * 0.8;
+            page.drawText(ln, { x, y, size: fontSize, font, color: rgb(0, 0, 0.55) });
+          }
+          curYTop += lineHeight;
+        });
+      });
+      return;
+    }
+
     // xFrac/yFrac — доли ширины/высоты страницы, отсчитанные от левого
     // верхнего угла (так удобнее было кликать на превью) — переводим в
     // систему координат PDF (ось Y снизу вверх).
-    const x = pos.xFrac * pageW;
+    let x;
+    if (pos.align === 'center' && pos.centerXFrac !== undefined) {
+      // Центрируем по горизонтали относительно centerXFrac (например —
+      // середина узкой ячейки вроде "L, мм"/"A, мм") — ширина текста в
+      // конкретном шрифте/размере известна только после embedFont, поэтому
+      // подобрать x можно только здесь, а не заранее в разметке.
+      const textWidth = font.widthOfTextAtSize(text, FONT_SIZE);
+      x = pos.centerXFrac * pageW - textWidth / 2;
+    } else {
+      x = pos.xFrac * pageW;
+    }
     const yTop = pos.yFrac * pageH;
     const y = pageH - yTop - FONT_SIZE * 0.8;
-    page.drawText(String(val), { x, y, size: FONT_SIZE, font, color: rgb(0, 0, 0.55) });
+    page.drawText(text, { x, y, size: FONT_SIZE, font, color: rgb(0, 0, 0.55) });
   });
 
   const bytes = await pdfDoc.save();

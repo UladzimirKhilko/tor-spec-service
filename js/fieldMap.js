@@ -30,7 +30,7 @@ const TEMPLATES = [
       { key: 'site',             label: 'Место установки',                  group: 'manual', shapeIds: [27], unit: null, notes: '' },
       { key: 'contact_person',   label: 'Фамилия И.О. (контактное лицо)',   group: 'manual', shapeIds: [11], unit: null, notes: '' },
       { key: 'contact_info',     label: 'Телефон, факс, E-mail',            group: 'manual', shapeIds: [13], unit: null, notes: '' },
-      { key: 'calc_number',      label: 'Номер расчёта / дата',             group: 'manual', shapeIds: [1797], unit: null, notes: 'Заполняет шаблон "№ --/---2020"' },
+      { key: 'calc_number',      label: 'Номер расчёта',                    group: 'manual', shapeIds: [1797], unit: null, notes: 'Введите только номер, например 19234 — месяц и год подставятся автоматически по сегодняшней дате: получится "19234/09-2026"' },
       { key: 'price_unit',       label: 'Цена без НДС за единицу, руб',     group: 'manual', shapeIds: [31], unit: 'руб', notes: '' },
       { key: 'price_total',      label: 'ИТОГО цена без НДС, руб',          group: 'manual', shapeIds: [36, 1794], unit: 'руб', notes: '' },
       { key: 'executor',         label: 'Расчёт выполнил (ФИО, дата)',      group: 'manual', shapeIds: [56], unit: null, notes: '' },
@@ -140,6 +140,16 @@ const TEMPLATES = [
         label: 'L, мм (длина по патрубкам)',
         group: 'manual', shapeIds: [748], unit: 'мм',
         notes: 'В спецификации BelTO обычно отсутствует, зависит от исполнения рамы — проверьте по чертежу/каталогу' },
+
+      { key: 'dim_a',
+        label: 'A, мм',
+        group: 'manual', shapeIds: [], unit: 'мм',
+        notes: 'В спецификации BelTO обычно отсутствует, зависит от исполнения рамы — проверьте по чертежу/каталогу' },
+
+      { key: 'certificates_note',
+        label: 'Блок "Примечание" (сертификаты, ТР ТС, материалы)',
+        group: 'manual', shapeIds: [], unit: null, multiline: true,
+        notes: 'Заполнено текстом из образца — проверьте и поправьте при необходимости (например номер/дату сертификата)' },
     ],
   },
 ];

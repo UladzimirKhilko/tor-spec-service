@@ -37,6 +37,12 @@ function setTemplate(id) {
     ? `Файл шаблона: ${currentTemplate.file}`
     : '';
   currentFieldValues = {};
+  // Блок "Примечание" (сертификаты и т.п.) заранее заполняется текстом из
+  // образца — чтобы пользователь мог его сразу проверить и, если нужно,
+  // поправить, а не начинать с пустого поля.
+  if (currentTemplate && currentTemplate.fields.some((f) => f.key === 'certificates_note')) {
+    currentFieldValues['certificates_note'] = DEFAULT_CERTIFICATES_TEXT;
+  }
   renderForm();
   el('formSection').style.display = '';
   el('actionsSection').style.display = '';
@@ -318,7 +324,7 @@ function renderForm() {
 
   currentTemplate.fields.forEach((f) => {
     const wrap = document.createElement('div');
-    wrap.className = 'field ' + f.group;
+    wrap.className = 'field ' + f.group + (f.multiline ? ' field-wide' : '');
 
     const label = document.createElement('label');
     label.textContent = f.label;
@@ -328,8 +334,9 @@ function renderForm() {
     label.appendChild(badge);
     wrap.appendChild(label);
 
-    const input = document.createElement('input');
-    input.type = 'text';
+    const input = document.createElement(f.multiline ? 'textarea' : 'input');
+    if (!f.multiline) input.type = 'text';
+    else input.rows = 10;
     input.value = currentFieldValues[f.key] || '';
     input.addEventListener('input', () => { currentFieldValues[f.key] = input.value; });
     wrap.appendChild(input);
@@ -353,7 +360,7 @@ async function handleGenerateVsdx() {
   try {
     const fills = currentTemplate.fields.map((f) => ({
       shapeIds: f.shapeIds,
-      value: currentFieldValues[f.key] || '',
+      value: f.key === 'calc_number' ? formatCalcNumber(currentFieldValues[f.key]) : (currentFieldValues[f.key] || ''),
     }));
     const { blob, notFound } = await buildVsdx(currentTemplate.file, fills);
     const filename = buildOutputFilename('vsdx');
@@ -370,97 +377,48 @@ async function handleGenerateVsdx() {
   }
 }
 
-/* ---------------- Генерация PDF (готовый .vsdx-шаблон) — настоящее скачивание ---------------- */
+/* ---------------- Генерация PDF (готовый .vsdx-шаблон) — по НАСТОЯЩЕМУ бланку ---------------- */
 //
-// Раньше здесь просто вызывался window.print(), и пользователю приходилось
-// самому в диалоге печати выбирать "Сохранить как PDF" — то есть файл на
-// самом деле не "скачивался". Теперь фирменный лист (#printSheet) рисуется
-// через html2canvas в картинку и вставляется в PDF через jsPDF — получаем
-// обычный файл, который браузер сохраняет сам, без диалога печати.
+// Раньше здесь были две последовательные попытки:
+//  1) window.print() — пользователю приходилось самому выбирать "Сохранить
+//     как PDF" в диалоге печати;
+//  2) сборка PDF из HTML-реконструкции бланка (#printSheet) через
+//     html2canvas — но сама эта реконструкция была лишь приблизительной
+//     копией фирменного бланка "на глаз" и заметно отличалась от настоящего
+//     файла (другой порядок строк, не было логотипов/сертификатов и т.д.).
+//
+// Теперь используется тот же pdf-lib-механизм, что и для "своего
+// PDF-шаблона" (js/pdfTemplate.js), но с заранее подготовленной разметкой
+// (js/builtinPdfMapping.js) поверх НАСТОЯЩЕГО файла бланка
+// (templates/TOR-15M_13-1x-original.pdf) — результат совпадает с образцом
+// один в один, дорисовываются только сами значения.
 
 async function handleGeneratePdf() {
   if (!currentTemplate) return;
   setStatus('genStatus', 'Формирую PDF...');
-  const sheetEl = document.querySelector('#printSheet .sheet');
-  if (!sheetEl) {
-    setStatus('genStatus', 'Не найден лист для печати.', 'err');
-    return;
-  }
-  document.querySelectorAll('#printSheet [data-print]').forEach((node) => {
-    const key = node.getAttribute('data-print');
-    node.textContent = currentFieldValues[key] || '';
-  });
-
-  const printSheetWrap = el('printSheet');
-  // #printSheet обычно display:none (виден только через CSS @media print) —
-  // html2canvas не умеет снимать невидимые элементы, поэтому на время
-  // рендера временно показываем его, но уводим за пределы экрана, чтобы
-  // пользователь не видел "моргания" вёрстки.
-  const prevStyles = {
-    display: printSheetWrap.style.display,
-    position: printSheetWrap.style.position,
-    left: printSheetWrap.style.left,
-    top: printSheetWrap.style.top,
-  };
-  printSheetWrap.style.display = 'block';
-  printSheetWrap.style.position = 'fixed';
-  printSheetWrap.style.left = '-10000px';
-  printSheetWrap.style.top = '0';
-
   try {
-    const canvas = await html2canvas(sheetEl, { scale: 2, backgroundColor: '#ffffff', useCORS: true });
-    const { jsPDF } = jspdf;
-    const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-    const pageWidthMm = pdf.internal.pageSize.getWidth();
-    const pageHeightMm = pdf.internal.pageSize.getHeight();
-    const imgWidthMm = pageWidthMm;
-    const imgHeightMm = (canvas.height * imgWidthMm) / canvas.width;
-    const imgData = canvas.toDataURL('image/jpeg', 0.95);
-
-    if (imgHeightMm <= pageHeightMm) {
-      pdf.addImage(imgData, 'JPEG', 0, 0, imgWidthMm, imgHeightMm);
-    } else {
-      // Лист выше одной страницы A4 — режем картинку на страницы по высоте.
-      let renderedMm = 0;
-      const pxPerMm = canvas.width / imgWidthMm;
-      let first = true;
-      while (renderedMm < imgHeightMm) {
-        const sliceHeightMm = Math.min(pageHeightMm, imgHeightMm - renderedMm);
-        const sliceCanvas = document.createElement('canvas');
-        sliceCanvas.width = canvas.width;
-        sliceCanvas.height = Math.round(sliceHeightMm * pxPerMm);
-        const ctx = sliceCanvas.getContext('2d');
-        ctx.drawImage(
-          canvas,
-          0, Math.round(renderedMm * pxPerMm), canvas.width, sliceCanvas.height,
-          0, 0, canvas.width, sliceCanvas.height
-        );
-        const sliceData = sliceCanvas.toDataURL('image/jpeg', 0.95);
-        if (!first) pdf.addPage();
-        pdf.addImage(sliceData, 'JPEG', 0, 0, imgWidthMm, sliceHeightMm);
-        renderedMm += sliceHeightMm;
-        first = false;
-      }
-    }
-
+    const pdfBytes = await getBuiltinPdfTemplateBytes();
+    const { executor_name, executor_date } = splitExecutorValue(currentFieldValues['executor']);
+    const values = {
+      ...currentFieldValues,
+      executor_name,
+      executor_date,
+      calc_number: formatCalcNumber(currentFieldValues['calc_number']),
+    };
+    const { bytes, notPlaced } = await fillPdfTemplate(pdfBytes, BUILTIN_PDF_FIELD_KEYS, BUILTIN_PDF_MAPPING, values);
     const filename = buildOutputFilename('pdf');
-    pdf.save(filename);
-    setStatus('genStatus', `Скачан файл ${filename}`, 'ok');
+    downloadPdfBytes(bytes, filename);
+    if (notPlaced.length) {
+      setStatus('genStatus', `Скачан файл ${filename}, но не удалось разместить: ${notPlaced.join(', ')}.`, 'err');
+    } else {
+      setStatus('genStatus', `Скачан файл ${filename}`, 'ok');
+    }
   } catch (err) {
     console.error(err);
     setStatus('genStatus', 'Ошибка формирования PDF: ' + err.message, 'err');
-  } finally {
-    // Возвращаем #printSheet в скрытое состояние сразу после скачивания —
-    // не дожидаясь журнала (см. ниже), чтобы не держать лист "показанным"
-    // (пусть и за пределами экрана) дольше, чем нужно на случай, если
-    // запись в Google Таблицу зависнет или долго не отвечает.
-    printSheetWrap.style.display = prevStyles.display;
-    printSheetWrap.style.position = prevStyles.position;
-    printSheetWrap.style.left = prevStyles.left;
-    printSheetWrap.style.top = prevStyles.top;
   }
-  // Журнал пишется отдельно и не блокирует ни скачивание, ни возврат листа
-  // в скрытое состояние — ошибка логирования не должна мешать пользователю.
+  // Журнал пишется отдельно и не блокирует скачивание — ошибка логирования
+  // не должна мешать пользователю.
   logToSheet(buildLogEntry('pdf'));
 }
 
@@ -477,7 +435,9 @@ async function handleGenerateCustomPdf() {
   }
   setStatus('genStatus', 'Формирую PDF по вашему шаблону...');
   try {
-    const { bytes, notPlaced } = await fillPdfTemplate(customTplBytes, customTplMapping, currentFieldValues);
+    const fieldKeys = PDF_TEMPLATE_FIELDS.map((f) => f.key);
+    const values = { ...currentFieldValues, calc_number: formatCalcNumber(currentFieldValues['calc_number']) };
+    const { bytes, notPlaced } = await fillPdfTemplate(customTplBytes, fieldKeys, customTplMapping, values);
     const filename = buildOutputFilename('pdf');
     downloadPdfBytes(bytes, filename);
     if (notPlaced.length) {
@@ -494,6 +454,18 @@ async function handleGenerateCustomPdf() {
 
 /* ---------------- Вспомогательное ---------------- */
 
+// Пользователь вводит только сам номер расчёта (например "19234") — месяц и
+// год дописываются автоматически по ТЕКУЩЕЙ дате в момент формирования
+// документа (не запоминаются заранее), формат "19234/09-2026".
+function formatCalcNumber(rawNumber) {
+  const num = (rawNumber || '').trim();
+  if (!num) return '';
+  const now = new Date();
+  const mm = String(now.getMonth() + 1).padStart(2, '0');
+  const yyyy = now.getFullYear();
+  return `${num}/${mm}-${yyyy}`;
+}
+
 function buildOutputFilename(ext) {
   const baseTitle = (currentTemplate.title || '').replace(/\.(pdf|vsdx)$/i, '');
   const model = (currentFieldValues['model'] || baseTitle).replace(/[^\wА-Яа-яЁё\-.]+/g, '_');
@@ -509,7 +481,7 @@ function buildLogEntry(format) {
     model: currentFieldValues['model'] || '',
     customer: currentFieldValues['customer'] || '',
     site: currentFieldValues['site'] || '',
-    calc_number: currentFieldValues['calc_number'] || '',
+    calc_number: formatCalcNumber(currentFieldValues['calc_number']),
     price_total: currentFieldValues['price_total'] || '',
   };
 }

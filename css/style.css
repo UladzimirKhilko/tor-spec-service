@@ -145,6 +145,8 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 .field.auto .badge { background: #cfe3fb; color: var(--accent-dark); }
 .field.manual .badge { background: #ffe3ad; color: #7a4b00; }
 .field .hint { font-size: 11.5px; color: var(--muted); margin-top: 4px; }
+.field-wide { grid-column: 1 / -1; }
+.field-wide textarea { resize: vertical; font-size: 13px; line-height: 1.4; }
 
 .section-title {
   font-size: 13px;
@@ -177,53 +179,6 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 
 details summary { cursor: pointer; color: var(--accent-dark); font-size: 13px; }
 
-/* ---------- Печатный лист (для PDF через печать браузера) ---------- */
-#printSheet {
-  display: none;
-}
-@media print {
-  body * { visibility: hidden; }
-  #printSheet, #printSheet * { visibility: visible; }
-  #printSheet {
-    display: block;
-    position: absolute;
-    left: 0; top: 0;
-    width: 100%;
-  }
-}
-
-.sheet {
-  width: 190mm;
-  margin: 0 auto;
-  font-family: "Times New Roman", Georgia, serif;
-  color: #000;
-  font-size: 11px;
-}
-.sheet .company-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  border-bottom: 2px solid #000;
-  padding-bottom: 6px;
-  margin-bottom: 6px;
-}
-.sheet .company-name { font-size: 18px; font-weight: bold; }
-.sheet .company-meta { text-align: right; font-size: 11px; }
-.sheet .title { text-align: center; font-size: 15px; font-weight: bold; margin: 8px 0; }
-.sheet table { width: 100%; border-collapse: collapse; margin-bottom: 4px; }
-.sheet table td, .sheet table th {
-  border: 1px solid #000;
-  padding: 3px 6px;
-  font-size: 11px;
-  vertical-align: middle;
-}
-.sheet th { background: #eee; font-weight: bold; text-align: center; }
-.sheet .section-row td { background: #ddd; font-weight: bold; text-align: center; font-style: italic; }
-.sheet .diagram-title { text-align: center; font-weight: bold; margin: 8px 0 4px; }
-.sheet .diagram-wrap { border: 1px solid #000; padding: 4px; text-align: center; }
-.sheet .diagram-wrap img { max-width: 100%; }
-.sheet .footer-note { margin-top: 10px; font-weight: bold; text-align: center; border: 1px solid #000; padding: 4px; }
-.sheet .signature-row { display: flex; justify-content: space-between; margin-top: 10px; font-weight: bold; }
 
 /* ============ Свой PDF-шаблон: переключатель режима, разметка ============ */
 

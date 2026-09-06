@@ -5,10 +5,19 @@ if (typeof pdfjsLib !== 'undefined') {
 /*
  * extract.js
  * Извлечение текста из загруженного файла спецификации:
+ *  - HTML-экспорт отчёта BelTO -> прямой разбор таблицы (точно, без OCR)
  *  - PDF с текстовым слоем -> pdf.js (быстро и точно)
  *  - Изображение (jpg/png) или PDF-скан -> tesseract.js (OCR, медленнее и менее точно)
  */
 
+// HTML-экспорт отчёта BelTO — это простая вложенная HTML-таблица с ровно
+// теми же подписями и значениями, что и в PDF/скане, только без всякого
+// OCR: числа и точки/запятые в них всегда абсолютно точные. Разбираем
+// каждую строку таблицы (<tr>) в одну текстовую строку "Подпись Единица
+// Значение1 Значение2", после чего передаём получившийся текст в тот же
+// самый parseBeltoText(), что используется для PDF/OCR — его регулярки
+// уже терпимы к небольшим отличиям в пробелах и полностью справляются
+// с таким чистым текстом.
 async function extractTextFromHtml(file) {
   const raw = await file.text();
   const doc = new DOMParser().parseFromString(raw, 'text/html');
@@ -17,9 +26,12 @@ async function extractTextFromHtml(file) {
   rows.forEach((tr) => {
     const cells = Array.from(tr.querySelectorAll('td'))
       .map((td) => (td.textContent || '')
-        .replace(/\u00a0/g, ' ')
+        .replace(/ /g, ' ')
         .replace(/\s+/g, ' ')
         .trim())
+      // "№" — самостоятельная ячейка-заголовок графы номера, ничего не
+      // несёт и мешает регулярке модели теплообменника (даёт "хвост" в
+      // конце строки) — выкидываем такие пустые "служебные" ячейки.
       .filter((t) => t && t !== '№');
     if (cells.length) lines.push(cells.join(' '));
   });
@@ -35,6 +47,7 @@ async function extractTextFromFile(file, onProgress) {
   }
 
   const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
+
   if (isPdf) {
     const text = await extractTextFromPdf(file, onProgress);
     if (text && text.replace(/\s/g, '').length > 30) {
@@ -197,6 +210,11 @@ async function renderPdfPageToImage(file) {
   const buf = await file.arrayBuffer();
   const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
   const page = await pdf.getPage(1);
+  // scale: 2 давал на реальных PDF-спецификациях (без текстового слоя)
+  // изображение только ~1180x1686px — при таком разрешении построчный OCR
+  // регулярно терял мелкие десятичные точки в числах (например "2.34" ->
+  // "234"/"2 34"). Поднимаем до 3, чтобы цифры и точки были крупнее и не
+  // сливались при увеличении строк перед распознаванием (см. ocrByTableRows).
   const viewport = page.getViewport({ scale: 3 });
   const canvas = document.createElement('canvas');
   canvas.width = viewport.width;
