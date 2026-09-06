@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>БСИ — короткие спецификации теплообменников</title>
-<link rel="stylesheet" href="css/style.css?v=25" />
+<link rel="stylesheet" href="css/style.css?v=28" />
 
 <!-- Библиотеки — собраны локально в vendor/, CDN не требуется для загрузки самого приложения.
      Исключение: Tesseract.js при OCR-распознавании сам подтягивает языковые данные
@@ -23,32 +23,20 @@
 <main>
 
   <section class="card">
-    <h2><span class="step-num">1</span>Шаблон</h2>
-    <div class="tpl-mode-row">
-      <label class="radio-label"><input type="radio" name="tplMode" id="tplModeBuiltin" checked /> Готовый бланк из списка</label>
-      <label class="radio-label"><input type="radio" name="tplMode" id="tplModeCustom" /> Свой бланк (другая модель, тот же вид)</label>
-    </div>
-
-    <div id="builtinTplBlock">
-      <select id="templateSelect"></select>
-      <div class="status-line" id="templateHint"></div>
-    </div>
-
-    <div id="customTplBlock" style="display:none;">
-      <input type="file" id="customTplInput" accept=".pdf" />
-      <div class="hint">Загрузите PDF бланка для другой модели (тот же фирменный бланк БСИ, просто другая картинка/марка теплообменника) — сами данные пойдут в готовый Word-шаблон (координаты не нужны), а картинку теплообменника программа вырежет из этого PDF автоматически. Если картинка на превью съехала — поправьте сдвиг и нажмите «Обновить превью».</div>
-      <div class="status-line" id="customTplStatus"></div>
-      <div id="customTplActions" style="display:none; margin-top:10px;">
-        <div class="offset-row">
-          <label>Сдвиг по X, мм <input type="number" id="offsetXInput" value="0" step="0.5" /></label>
-          <label>Сдвиг по Y, мм <input type="number" id="offsetYInput" value="0" step="0.5" /></label>
-        </div>
-        <div class="actions-row">
-          <button id="btnCheckAlignment" class="secondary">Обновить превью картинки</button>
-        </div>
-        <div class="status-line" id="diagramPreviewStatus"></div>
-        <img id="diagramPreviewImg" style="display:none; max-width:100%; border:1px solid var(--border); border-radius:6px; margin-top:8px;" />
+    <h2><span class="step-num">1</span>Шаблон бланка (PDF)</h2>
+    <input type="file" id="customTplInput" accept=".pdf" />
+    <div class="hint">Загрузите PDF фирменного бланка БСИ нужной модели — сами данные пойдут в готовый Word-шаблон (координаты не нужны), а марка/исполнение теплообменника и картинка программа распознает из этого PDF автоматически. Работает для любого бланка этой линейки (той же табличной разметки); под другой тип бланка позже будет отдельная настройка. Если картинка на превью съехала — поправьте сдвиг и нажмите «Обновить превью».</div>
+    <div class="status-line" id="customTplStatus"></div>
+    <div id="customTplActions" style="display:none; margin-top:10px;">
+      <div class="offset-row">
+        <label>Сдвиг по X, мм <input type="number" id="offsetXInput" value="0" step="0.5" /></label>
+        <label>Сдвиг по Y, мм <input type="number" id="offsetYInput" value="0" step="0.5" /></label>
       </div>
+      <div class="actions-row">
+        <button id="btnCheckAlignment" class="secondary">Обновить превью картинки</button>
+      </div>
+      <div class="status-line" id="diagramPreviewStatus"></div>
+      <img id="diagramPreviewImg" style="display:none; max-width:100%; border:1px solid var(--border); border-radius:6px; margin-top:8px;" />
     </div>
   </section>
 
@@ -78,12 +66,8 @@
 
   <section class="card" id="actionsSection" style="display:none;">
     <h2><span class="step-num">4</span>Сформировать документ</h2>
-    <div class="actions-row" id="builtinActions">
-      <button id="btnVsdx">Скачать .vsdx</button>
-      <button id="btnDocx" class="secondary">Скачать Word (.docx)</button>
-    </div>
-    <div class="actions-row" id="customActions" style="display:none;">
-      <button id="btnCustomDocx">Скачать Word (.docx) (по своему бланку)</button>
+    <div class="actions-row">
+      <button id="btnCustomDocx">Скачать Word (.docx)</button>
     </div>
     <div class="status-line" id="genStatus"></div>
     <div class="hint" style="margin-top:8px; color:#6b7280; font-size:12px;">
@@ -103,17 +87,17 @@
 <script src="vendor/pizzip.min.js"></script>
 <script src="vendor/docxtemplater.min.js"></script>
 <script src="vendor/docxtemplater-image-module-free.js"></script>
-<script src="js/config.js?v=25"></script>
-<script src="js/units.js?v=25"></script>
-<script src="js/fieldMap.js?v=25"></script>
-<script src="js/beltoParser.js?v=25"></script>
-<script src="js/extract.js?v=25"></script>
-<script src="js/vsdxBuilder.js?v=25"></script>
-<script src="js/pdfTemplate.js?v=25"></script>
-<script src="js/builtinPdfMapping.js?v=25"></script>
-<script src="js/docxTemplate.js?v=25"></script>
-<script src="js/diagramCrop.js?v=25"></script>
-<script src="js/sheetsLog.js?v=25"></script>
-<script src="js/app.js?v=25"></script>
+<script src="js/config.js?v=28"></script>
+<script src="js/units.js?v=28"></script>
+<script src="js/fieldMap.js?v=28"></script>
+<script src="js/beltoParser.js?v=28"></script>
+<script src="js/extract.js?v=28"></script>
+<script src="js/pdfTemplate.js?v=28"></script>
+<script src="js/builtinPdfMapping.js?v=28"></script>
+<script src="js/docxTemplate.js?v=28"></script>
+<script src="js/diagramCrop.js?v=28"></script>
+<script src="js/modelExtract.js?v=28"></script>
+<script src="js/sheetsLog.js?v=28"></script>
+<script src="js/app.js?v=28"></script>
 </body>
 </html>

@@ -1,19 +1,20 @@
 /*
- * app.js — склейка UI: выбор шаблона, загрузка/разбор спецификации,
- * форма полей, генерация .vsdx и PDF, запись в журнал.
+ * app.js — склейка UI: загрузка PDF-бланка + разбор спецификации,
+ * форма полей, генерация Word-документа, запись в журнал.
+ *
+ * Приложение универсально: сотрудник ВСЕГДА сам загружает PDF фирменного
+ * бланка нужной модели (шаг 1) — координаты полей и раскладка одни и те же
+ * для всей линейки бланков БСИ этого вида (см. builtinPdfMapping.js), а
+ * марка/исполнение теплообменника распознаются прямо из текста этого PDF
+ * (modelExtract.js), без единого "зашитого" шаблона по умолчанию. Под
+ * другой тип/линейку бланков в будущем потребуется отдельная настройка
+ * координат — это вне рамок текущей версии.
  */
 
 let currentTemplate = null;
 let currentFieldValues = {}; // key -> string (то, что реально попадёт в документ)
 let currentDebugMatches = [];
 
-// "builtin" — готовый бланк из проверенного списка (js/builtinPdfMapping.js,
-// BUILTIN_LETTERHEAD_TEMPLATES); "custom-pdf" — сотрудник сам загружает PDF
-// бланка того же вида (другая модель/картинка) — координаты полей общие для
-// всей линейки бланков (см. комментарий в builtinPdfMapping.js), поэтому
-// разметка мышкой не нужна — только необязательная поправка смещения по
-// X/Y, если у конкретного файла вёрстка чуть-чуть отличается.
-let templateMode = 'builtin';
 let customTplBytes = null;   // ArrayBuffer исходного PDF-бланка как есть
 let customTplHash = null;
 let customTplFileName = null;
@@ -28,75 +29,14 @@ const yFracToMm = (frac) => (frac * LETTERHEAD_PAGE.height) / PT_PER_MM;
 
 const el = (id) => document.getElementById(id);
 
-function initTemplateSelect() {
-  const select = el('templateSelect');
-  select.innerHTML = '';
-  TEMPLATES.forEach((t) => {
-    const opt = document.createElement('option');
-    opt.value = t.id;
-    opt.textContent = t.title;
-    select.appendChild(opt);
-  });
-  select.addEventListener('change', () => setTemplate(select.value));
-  setTemplate(TEMPLATES[0].id);
-}
-
 // Блок "Примечание" (сертификаты и т.п.) заранее заполняется текстом из
 // образца — чтобы пользователь мог его сразу проверить и, если нужно,
-// поправить, а не начинать с пустого поля. Общая логика для готового бланка
-// и "своего бланка" — оба используют один и тот же набор полей.
+// поправить, а не начинать с пустого поля.
 function applyDefaultFieldValues(fields) {
   currentFieldValues = {};
   if (fields.some((f) => f.key === 'certificates_note')) {
     currentFieldValues['certificates_note'] = DEFAULT_CERTIFICATES_TEXT;
   }
-}
-
-function setTemplate(id) {
-  currentTemplate = getTemplateById(id);
-  el('templateHint').textContent = currentTemplate
-    ? `Файл шаблона: ${currentTemplate.file}`
-    : '';
-  applyDefaultFieldValues(currentTemplate ? currentTemplate.fields : []);
-  renderForm();
-  el('formSection').style.display = '';
-  el('actionsSection').style.display = '';
-}
-
-/* ---------------- Переключение "готовый шаблон" / "свой PDF" ---------------- */
-
-function initTemplateModeToggle() {
-  const rBuiltin = el('tplModeBuiltin');
-  const rCustom = el('tplModeCustom');
-  rBuiltin.addEventListener('change', () => { if (rBuiltin.checked) switchTemplateMode('builtin'); });
-  rCustom.addEventListener('change', () => { if (rCustom.checked) switchTemplateMode('custom-pdf'); });
-}
-
-function switchTemplateMode(mode) {
-  templateMode = mode;
-  el('builtinTplBlock').style.display = mode === 'builtin' ? '' : 'none';
-  el('customTplBlock').style.display = mode === 'custom-pdf' ? '' : 'none';
-  el('builtinActions').style.display = mode === 'builtin' ? '' : 'none';
-  el('customActions').style.display = mode === 'custom-pdf' ? '' : 'none';
-
-  if (mode === 'builtin') {
-    setTemplate(el('templateSelect').value);
-    return;
-  }
-
-  // custom-pdf ("свой бланк") — те же поля, что и у готового бланка,
-  // потому что вся линейка бланков БСИ использует одну и ту же табличную
-  // разметку (см. builtinPdfMapping.js).
-  if (customTplFileName) {
-    currentTemplate = { id: 'custom-letterhead', title: customTplFileName, fields: TEMPLATES[0].fields };
-    applyDefaultFieldValues(currentTemplate.fields);
-    el('formSection').style.display = '';
-    el('actionsSection').style.display = '';
-  } else {
-    currentTemplate = null;
-    currentFieldValues = {};
-  }
-  renderForm();
 }
 
 /* ---------------- Загрузка своего бланка (самообслуживание, без разметки) ---------------- */
@@ -226,13 +166,51 @@ function initDropzone() {
   });
 }
 
+// Марка/исполнение теплообменника (например "ТОР-15М/13" + "1х") — берутся
+// из текстового слоя PDF-бланка (см. modelExtract.js), а не хардкодятся,
+// чтобы то же самое приложение правильно работало и со "своим бланком"
+// другой модели. Кэшируем по источнику бланка, чтобы не парсить PDF заново
+// при каждой загрузке спецификации, если бланк не менялся.
+let cachedModelParts = null; // { key, parts }
+
+async function getModelPartsForCurrentTemplate() {
+  if (!customTplBytes) return null;
+  try {
+    const key = `custom:${customTplHash}`;
+    if (cachedModelParts && cachedModelParts.key === key) return cachedModelParts.parts;
+    const parts = await extractModelPartsFromPdf(customTplBytes);
+    cachedModelParts = { key, parts };
+    return parts;
+  } catch (e) {
+    console.warn('Не удалось определить марку/исполнение из бланка', e);
+    return null;
+  }
+}
+
 async function handleFile(file) {
+  if (!customTplBytes) {
+    setStatus('parseStatus', 'Сначала загрузите PDF бланка (шаг 1) — без него не из чего распознать марку/исполнение и картинку теплообменника.', 'err');
+    return;
+  }
   setStatus('parseStatus', `Обрабатываю файл: ${file.name}...`);
   el('debugDetails').style.display = 'none';
   try {
     const { text, method } = await extractTextFromFile(file, (msg) => setStatus('parseStatus', msg));
     const { values, debugMatches } = parseBeltoText(text);
     currentDebugMatches = debugMatches;
+
+    // Марка (база) и исполнение — из PDF-бланка, а не из спецификации и не
+    // из зашитого значения по умолчанию. Если строку не удалось распознать
+    // (нестандартное форматирование бланка) — поля остаются пустыми, и
+    // сотрудника явно предупреждаем ниже, чтобы он заполнил их вручную.
+    const modelParts = await getModelPartsForCurrentTemplate();
+    if (modelParts) {
+      values.model_base = modelParts.base;
+      values.model_execution = modelParts.execution;
+      currentFieldValues['title_model'] = modelParts.base;
+    } else {
+      currentFieldValues['title_model'] = '';
+    }
 
     applyParsedValues(values);
     renderForm();
@@ -243,7 +221,11 @@ async function handleFile(file) {
         ? 'текстовый слой PDF'
         : 'OCR-распознавание';
     const checkHint = method === 'html-table' ? '' : ' — особенно после OCR';
-    setStatus('parseStatus', `Готово (${methodLabel}). Проверьте поля ниже перед генерацией${checkHint}.`, 'ok');
+    let statusMsg = `Готово (${methodLabel}). Проверьте поля ниже перед генерацией${checkHint}.`;
+    if (!modelParts) {
+      statusMsg += ' ⚠ Не удалось распознать марку и исполнение теплообменника в PDF-бланке — заполните поле «Марка теплообменника» и проверьте заголовок документа вручную.';
+    }
+    setStatus('parseStatus', statusMsg, modelParts ? 'ok' : 'err');
     el('debugDetails').style.display = '';
     el('debugBox').textContent = debugMatches.length
       ? debugMatches.map((m) => `[${m.keys.join(', ')}] <- "${m.line}"`).join('\n')
@@ -334,50 +316,9 @@ function renderForm() {
   });
 }
 
-/* ---------------- Генерация .vsdx ---------------- */
-
-async function handleGenerateVsdx() {
-  if (!currentTemplate) return;
-  setStatus('genStatus', 'Собираю .vsdx...');
-  try {
-    const fills = currentTemplate.fields.map((f) => {
-      let value = currentFieldValues[f.key] || '';
-      if (f.key === 'calc_number') value = formatCalcNumber(value);
-      else if (f.key === 'executor') value = formatExecutorCombined(value);
-      return { shapeIds: f.shapeIds, value };
-    });
-    const { blob, notFound } = await buildVsdx(currentTemplate.file, fills);
-    const filename = buildOutputFilename('vsdx');
-    downloadBlob(blob, filename);
-    if (notFound.length) {
-      setStatus('genStatus', `Готово, но не найдены фигуры ID: ${notFound.join(', ')} — проверьте маппинг в fieldMap.js`, 'err');
-    } else {
-      setStatus('genStatus', `Скачан файл ${filename}`, 'ok');
-    }
-    await logToSheet(buildLogEntry('vsdx'));
-  } catch (err) {
-    console.error(err);
-    setStatus('genStatus', 'Ошибка генерации .vsdx: ' + err.message, 'err');
-  }
-}
-
-/* ---------------- Генерация PDF (готовый .vsdx-шаблон) — по НАСТОЯЩЕМУ бланку ---------------- */
+/* ---------------- Генерация Word-документа ---------------- */
 //
-// Раньше здесь были две последовательные попытки:
-//  1) window.print() — пользователю приходилось самому выбирать "Сохранить
-//     как PDF" в диалоге печати;
-//  2) сборка PDF из HTML-реконструкции бланка (#printSheet) через
-//     html2canvas — но сама эта реконструкция была лишь приблизительной
-//     копией фирменного бланка "на глаз" и заметно отличалась от настоящего
-//     файла (другой порядок строк, не было логотипов/сертификатов и т.д.).
-//
-// Теперь используется тот же pdf-lib-механизм, что и для "своего
-// PDF-шаблона" (js/pdfTemplate.js), но с заранее подготовленной разметкой
-// (js/builtinPdfMapping.js) поверх НАСТОЯЩЕГО файла бланка
-// (templates/TOR-15M_13-1x-original.pdf) — результат совпадает с образцом
-// один в один, дорисовываются только сами значения.
-
-// Общие для готового и "своего" бланка значения: ФИО/дата в подписи (две
+// Общие значения: ФИО/дата в подписи (две
 // разные точки на бланке) и номер расчёта с автоматически дописанным "№ " и
 // "/MM-ГГГГ" (закрашиваем и перерисовываем весь "№ ..." целиком — см.
 // комментарий у calc_number в builtinPdfMapping.js). Если номер не введён —
@@ -413,6 +354,7 @@ function buildLetterheadValues() {
     executor_date: formatTodayDateDMY(),
     calc_number: formattedCalcNumber ? `№ ${formattedCalcNumber}` : '',
     dn_1: dnValue, dn_2: dnValue, dn_3: dnValue, dn_4: dnValue,
+    title_model: currentFieldValues['title_model'] || '',
   };
 }
 
@@ -421,44 +363,12 @@ function buildLetterheadValues() {
 // не поменялось с прошлого раза.
 let cachedDiagramCrop = null; // { key, crop }
 
-async function getDiagramCropForBuiltin() {
-  const pdfFile = (currentTemplate && currentTemplate.pdfFile) || BUILTIN_LETTERHEAD_TEMPLATES[0].file;
-  const key = `builtin:${pdfFile}`;
-  if (cachedDiagramCrop && cachedDiagramCrop.key === key) return cachedDiagramCrop.crop;
-  const pdfBytes = await getLetterheadTemplateBytes(pdfFile);
-  const crop = await cropDiagramFromPdf(pdfBytes, 0, 0);
-  cachedDiagramCrop = { key, crop };
-  return crop;
-}
-
-async function handleGenerateDocx() {
-  if (!currentTemplate) return;
-  setStatus('genStatus', 'Формирую Word-документ...');
-  try {
-    const values = buildLetterheadValues();
-    const diagram = await getDiagramCropForBuiltin();
-    const templateBytes = await getDocxTemplateBytes();
-    const bytes = await fillDocxTemplate(templateBytes, values, currentFieldValues['certificates_note'] || '', diagram);
-    const filename = buildOutputFilename('docx');
-    downloadDocxBytes(bytes, filename);
-    setStatus('genStatus', `Скачан файл ${filename}`, 'ok');
-  } catch (err) {
-    console.error(err);
-    setStatus('genStatus', 'Ошибка формирования Word-документа: ' + err.message, 'err');
-  }
-  // Журнал пишется отдельно и не блокирует скачивание — ошибка логирования
-  // не должна мешать пользователю.
-  logToSheet(buildLogEntry('docx'));
-}
-
-/* ---------------- Генерация Word по своему бланку ---------------- */
-
 async function handleGenerateCustomDocx() {
   if (!customTplBytes) {
-    setStatus('genStatus', 'Сначала загрузите свой бланк (шаг 1).', 'err');
+    setStatus('genStatus', 'Сначала загрузите PDF бланка (шаг 1).', 'err');
     return;
   }
-  setStatus('genStatus', 'Формирую Word-документ по вашему бланку...');
+  setStatus('genStatus', 'Формирую Word-документ...');
   try {
     readOffsetInputs();
     const values = buildLetterheadValues();
@@ -539,11 +449,7 @@ function buildLogEntry(format) {
 /* ---------------- Init ---------------- */
 
 document.addEventListener('DOMContentLoaded', () => {
-  initTemplateSelect();
-  initTemplateModeToggle();
   initCustomTemplateUpload();
   initDropzone();
-  el('btnVsdx').addEventListener('click', handleGenerateVsdx);
-  el('btnDocx').addEventListener('click', handleGenerateDocx);
   el('btnCustomDocx').addEventListener('click', handleGenerateCustomDocx);
 });
